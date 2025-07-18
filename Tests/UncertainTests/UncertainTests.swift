@@ -603,3 +603,362 @@ struct UncertainTests {
         #expect(notAndProb == notOrProb)
     }
 }
+
+#if canImport(CoreLocation)
+    import CoreLocation
+
+    @Suite("Uncertain Core Location Extensions")
+    struct UncertainCoreLocationTests {
+        @Test("Uncertain<CLLocation> from CLLocation models uncertainty")
+        func testUncertainCLLocationFrom() {
+            let base = CLLocation(
+                coordinate: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
+                altitude: 10.0,
+                horizontalAccuracy: 5.0,
+                verticalAccuracy: 2.0,
+                timestamp: Date()
+            )
+            let uncertain = Uncertain<CLLocation>.from(base)
+            // Should sample near the base location
+            let samples = (0..<1000).map { _ in uncertain.sample() }
+            let meanLat = samples.map { $0.coordinate.latitude }.reduce(0, +) / 1000
+            let meanLon = samples.map { $0.coordinate.longitude }.reduce(0, +) / 1000
+            let meanAlt = samples.map { $0.altitude }.reduce(0, +) / 1000
+            #expect(abs(meanLat - base.coordinate.latitude) < 0.01)
+            #expect(abs(meanLon - base.coordinate.longitude) < 0.01)
+            #expect(abs(meanAlt - base.altitude) < 0.5)
+        }
+
+        @Test("Uncertain<CLLocation> .location constructor")
+        func testUncertainCLLocationLocation() {
+            let coord = CLLocationCoordinate2D(latitude: 40.0, longitude: -74.0)
+            let uncertain = Uncertain<CLLocation>.location(
+                coordinate: coord,
+                horizontalAccuracy: 10.0,
+                verticalAccuracy: 3.0,
+                altitude: 50.0
+            )
+            let samples = (0..<1000).map { _ in uncertain.sample() }
+            let meanLat = samples.map { $0.coordinate.latitude }.reduce(0, +) / 1000
+            let meanLon = samples.map { $0.coordinate.longitude }.reduce(0, +) / 1000
+            let meanAlt = samples.map { $0.altitude }.reduce(0, +) / 1000
+            #expect(abs(meanLat - coord.latitude) < 0.02)
+            #expect(abs(meanLon - coord.longitude) < 0.02)
+            #expect(abs(meanAlt - 50.0) < 1.0)
+        }
+
+        @Test("Uncertain<CLLocation> distance and bearing")
+        func testUncertainCLLocationDistanceAndBearing() {
+            let a = Uncertain<CLLocation>.location(
+                coordinate: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
+                horizontalAccuracy: 5.0
+            )
+            let b = Uncertain<CLLocation>.location(
+                coordinate: CLLocationCoordinate2D(latitude: 37.7750, longitude: -122.4184),
+                horizontalAccuracy: 5.0
+            )
+            let distance = Uncertain<CLLocation>.distance(from: a, to: b)
+            let bearing = Uncertain<CLLocation>.bearing(from: a, to: b)
+            let meanDistance = (0..<1000).map { _ in distance.sample() }.reduce(0, +) / 1000
+            let meanBearing = (0..<1000).map { _ in bearing.sample() }.reduce(0, +) / 1000
+            // Should be close to the true distance and bearing
+            let trueA = CLLocation(latitude: 37.7749, longitude: -122.4194)
+            let trueB = CLLocation(latitude: 37.7750, longitude: -122.4184)
+            let trueDistance = trueA.distance(from: trueB)
+            #expect(abs(meanDistance - trueDistance) < 10.0)
+            #expect(meanBearing >= 0 && meanBearing <= 360)
+        }
+
+        @Test("Uncertain<CLLocationCoordinate2D> coordinate and distance")
+        func testUncertainCLLocationCoordinate2D() {
+            let coordA = CLLocationCoordinate2D(latitude: 51.5, longitude: -0.1)
+            let coordB = CLLocationCoordinate2D(latitude: 51.5005, longitude: -0.099)
+            let a = Uncertain<CLLocationCoordinate2D>.coordinate(coordA, accuracy: 8.0)
+            let b = Uncertain<CLLocationCoordinate2D>.coordinate(coordB, accuracy: 8.0)
+            let distance = Uncertain<CLLocationCoordinate2D>.distance(from: a, to: b)
+            let meanDistance = (0..<1000).map { _ in distance.sample() }.reduce(0, +) / 1000
+            let trueA = CLLocation(latitude: coordA.latitude, longitude: coordA.longitude)
+            let trueB = CLLocation(latitude: coordB.latitude, longitude: coordB.longitude)
+            let trueDistance = trueA.distance(from: trueB)
+            #expect(abs(meanDistance - trueDistance) < 15.0)
+        }
+
+        @Test("Uncertain<CLLocationSpeed> from location")
+        func testUncertainCLLocationSpeed() {
+            let loc = CLLocation(
+                coordinate: CLLocationCoordinate2D(latitude: 34.0, longitude: -118.0),
+                altitude: 0,
+                horizontalAccuracy: 10.0,
+                verticalAccuracy: 5.0,
+                course: 90.0,
+                speed: 15.0,
+                timestamp: Date()
+            )
+            if #available(iOS 14.0, macOS 11.0, *) {
+                let speed = Uncertain<CLLocationSpeed>.speed(from: loc)
+                let samples = (0..<1000).map { _ in speed.sample() }
+                let meanSpeed = samples.reduce(0, +) / 1000
+                #expect(abs(meanSpeed - 15.0) < 1.0)
+            }
+        }
+
+        @Test("Uncertain<CLLocationDirection> from location")
+        func testUncertainCLLocationDirection() {
+            let loc = CLLocation(
+                coordinate: CLLocationCoordinate2D(latitude: 34.0, longitude: -118.0),
+                altitude: 0,
+                horizontalAccuracy: 10.0,
+                verticalAccuracy: 5.0,
+                course: 45.0,
+                speed: 10.0,
+                timestamp: Date()
+            )
+            if #available(iOS 14.0, macOS 11.0, *) {
+                let course = Uncertain<CLLocationDirection>.course(from: loc)
+                let samples = (0..<1000).map { _ in course.sample() }
+                let meanCourse = samples.reduce(0, +) / 1000
+                #expect(abs(meanCourse - 45.0) < 5.0)
+                #expect(meanCourse >= 0 && meanCourse <= 360)
+            }
+        }
+
+        @Test("Parameterized speed uncertainty")
+        func testParameterizedSpeedUncertainty() {
+            let loc = CLLocation(
+                coordinate: CLLocationCoordinate2D(latitude: 34.0, longitude: -118.0),
+                altitude: 0,
+                horizontalAccuracy: 20.0,
+                verticalAccuracy: 5.0,
+                course: 90.0,
+                speed: 10.0,
+                timestamp: Date()
+            )
+            if #available(iOS 14.0, macOS 11.0, *) {
+                // Test with different uncertainty parameters
+                let conservativeSpeed = Uncertain<CLLocationSpeed>.speed(
+                    from: loc,
+                    speedUncertaintyFactor: 0.05,
+                    minimumSpeedUncertainty: 0.5
+                )
+                let liberalSpeed = Uncertain<CLLocationSpeed>.speed(
+                    from: loc,
+                    speedUncertaintyFactor: 0.2,
+                    minimumSpeedUncertainty: 0.1
+                )
+                
+                let conservativeSamples = (0..<1000).map { _ in conservativeSpeed.sample() }
+                let liberalSamples = (0..<1000).map { _ in liberalSpeed.sample() }
+                
+                let conservativeStd = sqrt(conservativeSamples.map { pow($0 - 10.0, 2) }.reduce(0, +) / 1000)
+                let liberalStd = sqrt(liberalSamples.map { pow($0 - 10.0, 2) }.reduce(0, +) / 1000)
+                
+                // Liberal should have higher uncertainty
+                #expect(liberalStd > conservativeStd)
+            }
+        }
+
+        @Test("Parameterized course uncertainty")
+        func testParameterizedCourseUncertainty() {
+            let loc = CLLocation(
+                coordinate: CLLocationCoordinate2D(latitude: 34.0, longitude: -118.0),
+                altitude: 0,
+                horizontalAccuracy: 10.0,
+                verticalAccuracy: 5.0,
+                course: 90.0,
+                speed: 10.0,
+                timestamp: Date()
+            )
+            if #available(iOS 14.0, macOS 11.0, *) {
+                // Test with different course uncertainties
+                let preciseCourse = Uncertain<CLLocationDirection>.course(
+                    from: loc,
+                    courseUncertainty: 2.0
+                )
+                let roughCourse = Uncertain<CLLocationDirection>.course(
+                    from: loc,
+                    courseUncertainty: 15.0
+                )
+                
+                let preciseSamples = (0..<1000).map { _ in preciseCourse.sample() }
+                let roughSamples = (0..<1000).map { _ in roughCourse.sample() }
+                
+                // Both should be centered around 90 degrees
+                let preciseMean = preciseSamples.reduce(0, +) / 1000
+                let roughMean = roughSamples.reduce(0, +) / 1000
+                
+                #expect(abs(preciseMean - 90.0) < 2.0)
+                #expect(abs(roughMean - 90.0) < 10.0)
+                
+                // Rough should have higher variance
+                let preciseVar = preciseSamples.map { pow($0 - 90.0, 2) }.reduce(0, +) / 1000
+                let roughVar = roughSamples.map { pow($0 - 90.0, 2) }.reduce(0, +) / 1000
+                
+                #expect(roughVar > preciseVar)
+            }
+        }
+
+        @Test("Invalid location data handling")
+        func testInvalidLocationDataHandling() {
+            // Test with invalid accuracy
+            let invalidLoc = CLLocation(
+                coordinate: CLLocationCoordinate2D(latitude: 34.0, longitude: -118.0),
+                altitude: 0,
+                horizontalAccuracy: -1.0,  // Invalid
+                verticalAccuracy: -1.0,    // Invalid
+                course: -1.0,              // Invalid
+                speed: -1.0,               // Invalid
+                timestamp: Date()
+            )
+            
+            let uncertainLoc = Uncertain<CLLocation>.from(invalidLoc)
+            let sample = uncertainLoc.sample()
+            
+            // Should return original location when accuracy is invalid
+            #expect(sample.coordinate.latitude == invalidLoc.coordinate.latitude)
+            #expect(sample.coordinate.longitude == invalidLoc.coordinate.longitude)
+            
+            if #available(iOS 14.0, macOS 11.0, *) {
+                // Speed and course should return -1 for invalid data
+                let speed = Uncertain<CLLocationSpeed>.speed(from: invalidLoc)
+                let course = Uncertain<CLLocationDirection>.course(from: invalidLoc)
+                
+                #expect(speed.sample() == -1.0)
+                #expect(course.sample() == -1.0)
+            }
+        }
+
+        @Test("GPS uncertainty modeling vs naive approach")
+        func testGPSUncertaintyModelingVsNaive() {
+            let baseCoord = CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194)
+            let accuracy = 10.0
+            
+            // Test the improved coordinate method
+            let uncertainCoord = Uncertain<CLLocationCoordinate2D>.coordinate(baseCoord, accuracy: accuracy)
+            
+            // Sample many times to check distribution
+            let samples = (0..<1000).map { _ in uncertainCoord.sample() }
+            let latOffsets = samples.map { $0.latitude - baseCoord.latitude }
+            let lonOffsets = samples.map { $0.longitude - baseCoord.longitude }
+            
+            // Mean should be close to base coordinate
+            let meanLatOffset = latOffsets.reduce(0, +) / 1000
+            let meanLonOffset = lonOffsets.reduce(0, +) / 1000
+            
+            #expect(abs(meanLatOffset) < 0.001)
+            #expect(abs(meanLonOffset) < 0.001)
+            
+            // Should have reasonable distribution (not too tight, not too loose)
+            let latStd = sqrt(latOffsets.map { pow($0, 2) }.reduce(0, +) / 1000)
+            let lonStd = sqrt(lonOffsets.map { pow($0, 2) }.reduce(0, +) / 1000)
+            
+            #expect(latStd > 0.00005)  // Not too tight
+            #expect(latStd < 0.01)     // Not too loose
+            #expect(lonStd > 0.00005)
+            #expect(lonStd < 0.01)
+        }
+
+        @Test("Altitude uncertainty modeling")
+        func testAltitudeUncertaintyModeling() {
+            let baseLoc = CLLocation(
+                coordinate: CLLocationCoordinate2D(latitude: 34.0, longitude: -118.0),
+                altitude: 100.0,
+                horizontalAccuracy: 5.0,
+                verticalAccuracy: 3.0,
+                timestamp: Date()
+            )
+            
+            let uncertainLoc = Uncertain<CLLocation>.from(baseLoc)
+            let samples = (0..<1000).map { _ in uncertainLoc.sample() }
+            let altitudes = samples.map { $0.altitude }
+            
+            // Mean should be close to base altitude
+            let meanAlt = altitudes.reduce(0, +) / 1000
+            #expect(abs(meanAlt - 100.0) < 1.0)
+            
+            // Should have reasonable altitude uncertainty
+            let altStd = sqrt(altitudes.map { pow($0 - 100.0, 2) }.reduce(0, +) / 1000)
+            #expect(altStd > 1.0)  // Should have some uncertainty
+            #expect(altStd < 10.0) // But not too much
+        }
+
+        @Test("Location uncertainty propagation in calculations")
+        func testLocationUncertaintyPropagationInCalculations() {
+            let locA = Uncertain<CLLocation>.location(
+                coordinate: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
+                horizontalAccuracy: 10.0,
+                altitude: 50.0
+            )
+            
+            let locB = Uncertain<CLLocation>.location(
+                coordinate: CLLocationCoordinate2D(latitude: 37.7849, longitude: -122.4094),
+                horizontalAccuracy: 10.0,
+                altitude: 60.0
+            )
+            
+            // Calculate uncertain distance and bearing
+            let distance = Uncertain<CLLocation>.distance(from: locA, to: locB)
+            let bearing = Uncertain<CLLocation>.bearing(from: locA, to: locB)
+            
+            // Test that uncertainty propagates correctly
+            let distanceSamples = (0..<1000).map { _ in distance.sample() }
+            let bearingSamples = (0..<1000).map { _ in bearing.sample() }
+            
+            // Distance should be around 1.5km (rough estimate)
+            let meanDistance = distanceSamples.reduce(0, +) / 1000
+            #expect(meanDistance > 1000)  // > 1km
+            #expect(meanDistance < 3000)  // < 3km
+            
+            // Should have reasonable uncertainty in distance
+            let distanceStd = sqrt(distanceSamples.map { pow($0 - meanDistance, 2) }.reduce(0, +) / 1000)
+            #expect(distanceStd > 5.0)   // Some uncertainty
+            #expect(distanceStd < 50.0)  // Not too much
+            
+            // Bearing should be roughly northeast
+            let meanBearing = bearingSamples.reduce(0, +) / 1000
+            #expect(meanBearing >= 0)
+            #expect(meanBearing <= 360)
+        }
+
+        @Test("Course angle normalization")
+        func testCourseAngleNormalization() {
+            if #available(iOS 14.0, macOS 11.0, *) {
+                // Test course near 0/360 boundary
+                let locNorth = CLLocation(
+                    coordinate: CLLocationCoordinate2D(latitude: 34.0, longitude: -118.0),
+                    altitude: 0,
+                    horizontalAccuracy: 5.0,
+                    verticalAccuracy: 5.0,
+                    course: 359.0,  // Very close to north
+                    speed: 10.0,
+                    timestamp: Date()
+                )
+                
+                let course = Uncertain<CLLocationDirection>.course(
+                    from: locNorth,
+                    courseUncertainty: 10.0  // Large uncertainty to test boundary
+                )
+                
+                let samples = (0..<1000).map { _ in course.sample() }
+                
+                // All samples should be in valid range [0, 360)
+                #expect(samples.allSatisfy { $0 >= 0 && $0 < 360 })
+                
+                // Test with course at exact boundary
+                let locExact = CLLocation(
+                    coordinate: CLLocationCoordinate2D(latitude: 34.0, longitude: -118.0),
+                    altitude: 0,
+                    horizontalAccuracy: 5.0,
+                    verticalAccuracy: 5.0,
+                    course: 0.0,
+                    speed: 10.0,
+                    timestamp: Date()
+                )
+                
+                let exactCourse = Uncertain<CLLocationDirection>.course(from: locExact)
+                let exactSamples = (0..<100).map { _ in exactCourse.sample() }
+                
+                #expect(exactSamples.allSatisfy { $0 >= 0 && $0 < 360 })
+            }
+        }
+    }
+#endif
