@@ -1099,7 +1099,8 @@ extension Uncertain where T == Bool {
                 // Use configurable estimate based on location accuracy
                 let speedUncertainty = Swift.max(
                     minimumSpeedUncertainty, location.horizontalAccuracy * speedUncertaintyFactor)
-                let uncertainSpeed = abs(
+                let uncertainSpeed = Swift.max(
+                    0,
                     Uncertain<Double>.normal(mean: baseSpeed, standardDeviation: speedUncertainty)
                         .sample()
                 )
