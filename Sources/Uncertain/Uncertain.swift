@@ -888,11 +888,10 @@ extension Uncertain where T == Bool {
     import CoreLocation
 
     extension Uncertain where T == CLLocation {
-        /// Creates an uncertain location from a CLLocation with proper uncertainty modeling.
+        /// Creates an uncertain location from a CLLocation.
         ///
-        /// Uses the actual accuracy parameters provided by Core Location instead of
-        /// naive uniform distributions. Models GPS uncertainty as a 2D Gaussian
-        /// distribution based on horizontal accuracy.
+        /// Models GPS uncertainty as a 2D Gaussian distribution
+        /// based on horizontal accuracy.
         ///
         /// - Parameter location: The CLLocation with accuracy information.
         /// - Returns: A new uncertain location value.
@@ -958,9 +957,9 @@ extension Uncertain where T == Bool {
         /// - Returns: A new uncertain location value.
         public static func location(
             coordinate: CLLocationCoordinate2D,
-            horizontalAccuracy: Double,
-            verticalAccuracy: Double = -1,
-            altitude: Double = 0
+            horizontalAccuracy: CLLocationAccuracy,
+            verticalAccuracy: CLLocationAccuracy = -1,
+            altitude: CLLocationDistance = 0
         ) -> Uncertain<CLLocation> {
             let baseLocation = CLLocation(
                 coordinate: coordinate,
@@ -981,8 +980,8 @@ extension Uncertain where T == Bool {
         public static func distance(
             from: Uncertain<CLLocation>,
             to: Uncertain<CLLocation>
-        ) -> Uncertain<Double> {
-            return Uncertain<Double> {
+        ) -> Uncertain<CLLocationDistance> {
+            return Uncertain<CLLocationDistance> {
                 let loc1 = from.sample()
                 let loc2 = to.sample()
                 return loc1.distance(from: loc2)
@@ -1030,7 +1029,7 @@ extension Uncertain where T == Bool {
         /// - Returns: A new uncertain coordinate value.
         public static func coordinate(
             _ coordinate: CLLocationCoordinate2D,
-            accuracy: Double
+            accuracy: CLLocationAccuracy
         ) -> Uncertain<CLLocationCoordinate2D> {
             return Uncertain<CLLocationCoordinate2D> {
                 let earthRadius = 6_371_000.0  // meters
@@ -1062,8 +1061,8 @@ extension Uncertain where T == Bool {
         public static func distance(
             from: Uncertain<CLLocationCoordinate2D>,
             to: Uncertain<CLLocationCoordinate2D>
-        ) -> Uncertain<Double> {
-            return Uncertain<Double> {
+        ) -> Uncertain<CLLocationDistance> {
+            return Uncertain<CLLocationDistance> {
                 let coord1 = from.sample()
                 let coord2 = to.sample()
                 let loc1 = CLLocation(latitude: coord1.latitude, longitude: coord1.longitude)
