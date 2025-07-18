@@ -887,40 +887,89 @@ extension Uncertain where T == Bool {
 #if canImport(CoreLocation)
     import CoreLocation
 
-    extension Uncertain where T == CLLocationCoordinate2D {
-        /// Creates an uncertain location from GPS coordinates with accuracy.
+    extension Uncertain where T == CLLocation {
+        /// Creates an uncertain location from a CLLocation with proper uncertainty modeling.
+        ///
+        /// Uses the actual accuracy parameters provided by Core Location instead of
+        /// naive uniform distributions. Models GPS uncertainty as a 2D Gaussian
+        /// distribution based on horizontal accuracy.
+        ///
+        /// - Parameter location: The CLLocation with accuracy information.
+        /// - Returns: A new uncertain location value.
+        public static func from(_ location: CLLocation) -> Uncertain<CLLocation> {
+            return Uncertain<CLLocation> {
+                let horizontalAccuracy = location.horizontalAccuracy
+                let verticalAccuracy = location.verticalAccuracy
+
+                // If accuracy is negative, the reading is invalid
+                guard horizontalAccuracy >= 0 else {
+                    return location
+                }
+
+                // Model horizontal uncertainty as 2D Gaussian (not uniform circle)
+                let earthRadius = 6_371_000.0  // meters
+                let lat1 = location.coordinate.latitude * .pi / 180
+
+                // Generate offset in meters using 2D Gaussian distribution
+                let northOffset = Uncertain<Double>.normal(
+                    mean: 0, standardDeviation: horizontalAccuracy
+                ).sample()
+                let eastOffset = Uncertain<Double>.normal(
+                    mean: 0, standardDeviation: horizontalAccuracy
+                ).sample()
+
+                // Convert meter offsets to lat/lon
+                let latOffset = northOffset / earthRadius * 180 / .pi
+                let lonOffset = eastOffset / (earthRadius * cos(lat1)) * 180 / .pi
+
+                let uncertainCoordinate = CLLocationCoordinate2D(
+                    latitude: location.coordinate.latitude + latOffset,
+                    longitude: location.coordinate.longitude + lonOffset
+                )
+
+                // Model altitude uncertainty if available
+                let uncertainAltitude: Double
+                if verticalAccuracy >= 0 {
+                    uncertainAltitude =
+                        location.altitude
+                        + Uncertain<Double>.normal(mean: 0, standardDeviation: verticalAccuracy)
+                        .sample()
+                } else {
+                    uncertainAltitude = location.altitude
+                }
+
+                return CLLocation(
+                    coordinate: uncertainCoordinate,
+                    altitude: uncertainAltitude,
+                    horizontalAccuracy: horizontalAccuracy,
+                    verticalAccuracy: verticalAccuracy,
+                    timestamp: location.timestamp
+                )
+            }
+        }
+
+        /// Creates an uncertain location with specified uncertainties.
         ///
         /// - Parameters:
         ///   - coordinate: The GPS coordinate.
-        ///   - accuracy: The GPS accuracy in meters (used as standard deviation).
+        ///   - horizontalAccuracy: The horizontal accuracy in meters.
+        ///   - verticalAccuracy: The vertical accuracy in meters.
+        ///   - altitude: The altitude in meters.
         /// - Returns: A new uncertain location value.
-        public static func gpsLocation(
+        public static func location(
             coordinate: CLLocationCoordinate2D,
-            accuracy: Double
-        ) -> Uncertain<CLLocationCoordinate2D> {
-            return Uncertain<CLLocationCoordinate2D> {
-                let earthRadius = 6_371_000.0  // meters
-                let bearing = Double.random(in: 0..<2 * .pi)
-                let distance = abs(
-                    Uncertain<Double>.normal(mean: 0, standardDeviation: accuracy).sample())
-
-                let lat1 = coordinate.latitude * .pi / 180
-                let lon1 = coordinate.longitude * .pi / 180
-
-                let lat2 = asin(
-                    sin(lat1) * cos(distance / earthRadius) + cos(lat1)
-                        * sin(distance / earthRadius) * cos(bearing))
-                let lon2 =
-                    lon1
-                    + atan2(
-                        sin(bearing) * sin(distance / earthRadius) * cos(lat1),
-                        cos(distance / earthRadius) - sin(lat1) * sin(lat2))
-
-                return CLLocationCoordinate2D(
-                    latitude: lat2 * 180 / .pi,
-                    longitude: lon2 * 180 / .pi
-                )
-            }
+            horizontalAccuracy: Double,
+            verticalAccuracy: Double = -1,
+            altitude: Double = 0
+        ) -> Uncertain<CLLocation> {
+            let baseLocation = CLLocation(
+                coordinate: coordinate,
+                altitude: altitude,
+                horizontalAccuracy: horizontalAccuracy,
+                verticalAccuracy: verticalAccuracy,
+                timestamp: Date()
+            )
+            return from(baseLocation)
         }
 
         /// Calculates the distance between two uncertain locations.
@@ -930,15 +979,155 @@ extension Uncertain where T == Bool {
         ///   - to: The ending location.
         /// - Returns: An uncertain distance value in meters.
         public static func distance(
+            from: Uncertain<CLLocation>,
+            to: Uncertain<CLLocation>
+        ) -> Uncertain<Double> {
+            return Uncertain<Double> {
+                let loc1 = from.sample()
+                let loc2 = to.sample()
+                return loc1.distance(from: loc2)
+            }
+        }
+
+        /// Calculates the bearing between two uncertain locations.
+        ///
+        /// - Parameters:
+        ///   - from: The starting location.
+        ///   - to: The ending location.
+        /// - Returns: An uncertain bearing value in degrees (0-360).
+        public static func bearing(
+            from: Uncertain<CLLocation>,
+            to: Uncertain<CLLocation>
+        ) -> Uncertain<Double> {
+            return Uncertain<Double> {
+                let loc1 = from.sample()
+                let loc2 = to.sample()
+
+                let lat1 = loc1.coordinate.latitude * .pi / 180
+                let lat2 = loc2.coordinate.latitude * .pi / 180
+                let deltaLon = (loc2.coordinate.longitude - loc1.coordinate.longitude) * .pi / 180
+
+                let x = sin(deltaLon) * cos(lat2)
+                let y = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(deltaLon)
+                let bearing = atan2(x, y)
+
+                // Convert to degrees and normalize to 0-360
+                var degrees = bearing * 180 / .pi
+                if degrees < 0 {
+                    degrees += 360
+                }
+                return degrees
+            }
+        }
+    }
+
+    extension Uncertain where T == CLLocationCoordinate2D {
+        /// Creates an uncertain coordinate from a CLLocationCoordinate2D with accuracy.
+        ///
+        /// - Parameters:
+        ///   - coordinate: The GPS coordinate.
+        ///   - accuracy: The GPS accuracy in meters (used as standard deviation).
+        /// - Returns: A new uncertain coordinate value.
+        public static func coordinate(
+            _ coordinate: CLLocationCoordinate2D,
+            accuracy: Double
+        ) -> Uncertain<CLLocationCoordinate2D> {
+            return Uncertain<CLLocationCoordinate2D> {
+                let earthRadius = 6_371_000.0  // meters
+                let lat1 = coordinate.latitude * .pi / 180
+
+                // Use 2D Gaussian distribution for uncertainty modeling
+                let northOffset = Uncertain<Double>.normal(mean: 0, standardDeviation: accuracy)
+                    .sample()
+                let eastOffset = Uncertain<Double>.normal(mean: 0, standardDeviation: accuracy)
+                    .sample()
+
+                // Convert meter offsets to lat/lon
+                let latOffset = northOffset / earthRadius * 180 / .pi
+                let lonOffset = eastOffset / (earthRadius * cos(lat1)) * 180 / .pi
+
+                return CLLocationCoordinate2D(
+                    latitude: coordinate.latitude + latOffset,
+                    longitude: coordinate.longitude + lonOffset
+                )
+            }
+        }
+
+        /// Calculates the distance between two uncertain coordinates.
+        ///
+        /// - Parameters:
+        ///   - from: The starting coordinate.
+        ///   - to: The ending coordinate.
+        /// - Returns: An uncertain distance value in meters.
+        public static func distance(
             from: Uncertain<CLLocationCoordinate2D>,
             to: Uncertain<CLLocationCoordinate2D>
         ) -> Uncertain<Double> {
             return Uncertain<Double> {
-                let loc1 = CLLocation(
-                    latitude: from.sample().latitude, longitude: from.sample().longitude)
-                let loc2 = CLLocation(
-                    latitude: to.sample().latitude, longitude: to.sample().longitude)
+                let coord1 = from.sample()
+                let coord2 = to.sample()
+                let loc1 = CLLocation(latitude: coord1.latitude, longitude: coord1.longitude)
+                let loc2 = CLLocation(latitude: coord2.latitude, longitude: coord2.longitude)
                 return loc1.distance(from: loc2)
+            }
+        }
+    }
+
+    @available(iOS 14.0, macOS 11.0, watchOS 7.0, tvOS 14.0, *)
+    extension Uncertain where T == CLLocationSpeed {
+        /// Creates an uncertain speed from a CLLocation with speed uncertainty.
+        ///
+        /// - Parameter location: The CLLocation with speed and course information.
+        /// - Returns: A new uncertain speed value in m/s.
+        public static func speed(from location: CLLocation) -> Uncertain<CLLocationSpeed> {
+            return Uncertain<CLLocationSpeed> {
+                let baseSpeed = location.speed
+
+                // If speed is negative, it's invalid
+                guard baseSpeed >= 0 else {
+                    return -1
+                }
+
+                // Model speed uncertainty (Core Location doesn't provide direct speed accuracy)
+                // Use a reasonable estimate based on location accuracy and time
+                let speedUncertainty = Swift.max(0.1, location.horizontalAccuracy / 10.0)
+                let uncertainSpeed = abs(
+                    Uncertain<Double>.normal(mean: baseSpeed, standardDeviation: speedUncertainty)
+                        .sample()
+                )
+
+                return uncertainSpeed
+            }
+        }
+    }
+
+    @available(iOS 14.0, macOS 11.0, watchOS 7.0, tvOS 14.0, *)
+    extension Uncertain where T == CLLocationDirection {
+        /// Creates an uncertain course/heading from a CLLocation.
+        ///
+        /// - Parameter location: The CLLocation with course information.
+        /// - Returns: A new uncertain course value in degrees.
+        public static func course(from location: CLLocation) -> Uncertain<CLLocationDirection> {
+            return Uncertain<CLLocationDirection> {
+                let baseCourse = location.course
+
+                // If course is negative, it's invalid
+                guard baseCourse >= 0 else {
+                    return -1
+                }
+
+                // Model course uncertainty
+                let courseUncertainty = 5.0  // degrees - reasonable estimate
+                let uncertainCourse = Uncertain<Double>.normal(
+                    mean: baseCourse, standardDeviation: courseUncertainty
+                ).sample()
+
+                // Normalize to 0-360 degrees
+                var normalizedCourse = uncertainCourse.truncatingRemainder(dividingBy: 360)
+                if normalizedCourse < 0 {
+                    normalizedCourse += 360
+                }
+                return normalizedCourse
             }
         }
     }
