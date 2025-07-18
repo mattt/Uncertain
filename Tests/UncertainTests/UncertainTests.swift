@@ -603,3 +603,123 @@ struct UncertainTests {
         #expect(notAndProb == notOrProb)
     }
 }
+
+#if canImport(CoreLocation)
+    import CoreLocation
+
+    @Suite("Uncertain Core Location Extensions")
+    struct UncertainCoreLocationTests {
+        @Test("Uncertain<CLLocation> from CLLocation models uncertainty")
+        func testUncertainCLLocationFrom() {
+            let base = CLLocation(
+                coordinate: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
+                altitude: 10.0,
+                horizontalAccuracy: 5.0,
+                verticalAccuracy: 2.0,
+                timestamp: Date()
+            )
+            let uncertain = Uncertain<CLLocation>.from(base)
+            // Should sample near the base location
+            let samples = (0..<1000).map { _ in uncertain.sample() }
+            let meanLat = samples.map { $0.coordinate.latitude }.reduce(0, +) / 1000
+            let meanLon = samples.map { $0.coordinate.longitude }.reduce(0, +) / 1000
+            let meanAlt = samples.map { $0.altitude }.reduce(0, +) / 1000
+            #expect(abs(meanLat - base.coordinate.latitude) < 0.01)
+            #expect(abs(meanLon - base.coordinate.longitude) < 0.01)
+            #expect(abs(meanAlt - base.altitude) < 0.5)
+        }
+
+        @Test("Uncertain<CLLocation> .location constructor")
+        func testUncertainCLLocationLocation() {
+            let coord = CLLocationCoordinate2D(latitude: 40.0, longitude: -74.0)
+            let uncertain = Uncertain<CLLocation>.location(
+                coordinate: coord,
+                horizontalAccuracy: 10.0,
+                verticalAccuracy: 3.0,
+                altitude: 50.0
+            )
+            let samples = (0..<1000).map { _ in uncertain.sample() }
+            let meanLat = samples.map { $0.coordinate.latitude }.reduce(0, +) / 1000
+            let meanLon = samples.map { $0.coordinate.longitude }.reduce(0, +) / 1000
+            let meanAlt = samples.map { $0.altitude }.reduce(0, +) / 1000
+            #expect(abs(meanLat - coord.latitude) < 0.02)
+            #expect(abs(meanLon - coord.longitude) < 0.02)
+            #expect(abs(meanAlt - 50.0) < 1.0)
+        }
+
+        @Test("Uncertain<CLLocation> distance and bearing")
+        func testUncertainCLLocationDistanceAndBearing() {
+            let a = Uncertain<CLLocation>.location(
+                coordinate: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
+                horizontalAccuracy: 5.0
+            )
+            let b = Uncertain<CLLocation>.location(
+                coordinate: CLLocationCoordinate2D(latitude: 37.7750, longitude: -122.4184),
+                horizontalAccuracy: 5.0
+            )
+            let distance = Uncertain<CLLocation>.distance(from: a, to: b)
+            let bearing = Uncertain<CLLocation>.bearing(from: a, to: b)
+            let meanDistance = (0..<1000).map { _ in distance.sample() }.reduce(0, +) / 1000
+            let meanBearing = (0..<1000).map { _ in bearing.sample() }.reduce(0, +) / 1000
+            // Should be close to the true distance and bearing
+            let trueA = CLLocation(latitude: 37.7749, longitude: -122.4194)
+            let trueB = CLLocation(latitude: 37.7750, longitude: -122.4184)
+            let trueDistance = trueA.distance(from: trueB)
+            #expect(abs(meanDistance - trueDistance) < 10.0)
+            #expect(meanBearing >= 0 && meanBearing <= 360)
+        }
+
+        @Test("Uncertain<CLLocationCoordinate2D> coordinate and distance")
+        func testUncertainCLLocationCoordinate2D() {
+            let coordA = CLLocationCoordinate2D(latitude: 51.5, longitude: -0.1)
+            let coordB = CLLocationCoordinate2D(latitude: 51.5005, longitude: -0.099)
+            let a = Uncertain<CLLocationCoordinate2D>.coordinate(coordA, accuracy: 8.0)
+            let b = Uncertain<CLLocationCoordinate2D>.coordinate(coordB, accuracy: 8.0)
+            let distance = Uncertain<CLLocationCoordinate2D>.distance(from: a, to: b)
+            let meanDistance = (0..<1000).map { _ in distance.sample() }.reduce(0, +) / 1000
+            let trueA = CLLocation(latitude: coordA.latitude, longitude: coordA.longitude)
+            let trueB = CLLocation(latitude: coordB.latitude, longitude: coordB.longitude)
+            let trueDistance = trueA.distance(from: trueB)
+            #expect(abs(meanDistance - trueDistance) < 15.0)
+        }
+
+        @Test("Uncertain<CLLocationSpeed> from location")
+        func testUncertainCLLocationSpeed() {
+            let loc = CLLocation(
+                coordinate: CLLocationCoordinate2D(latitude: 34.0, longitude: -118.0),
+                altitude: 0,
+                horizontalAccuracy: 10.0,
+                verticalAccuracy: 5.0,
+                course: 90.0,
+                speed: 15.0,
+                timestamp: Date()
+            )
+            if #available(iOS 14.0, macOS 11.0, *) {
+                let speed = Uncertain<CLLocationSpeed>.speed(from: loc)
+                let samples = (0..<1000).map { _ in speed.sample() }
+                let meanSpeed = samples.reduce(0, +) / 1000
+                #expect(abs(meanSpeed - 15.0) < 1.0)
+            }
+        }
+
+        @Test("Uncertain<CLLocationDirection> from location")
+        func testUncertainCLLocationDirection() {
+            let loc = CLLocation(
+                coordinate: CLLocationCoordinate2D(latitude: 34.0, longitude: -118.0),
+                altitude: 0,
+                horizontalAccuracy: 10.0,
+                verticalAccuracy: 5.0,
+                course: 45.0,
+                speed: 10.0,
+                timestamp: Date()
+            )
+            if #available(iOS 14.0, macOS 11.0, *) {
+                let course = Uncertain<CLLocationDirection>.course(from: loc)
+                let samples = (0..<1000).map { _ in course.sample() }
+                let meanCourse = samples.reduce(0, +) / 1000
+                #expect(abs(meanCourse - 45.0) < 5.0)
+                #expect(meanCourse >= 0 && meanCourse <= 360)
+            }
+        }
+    }
+#endif
