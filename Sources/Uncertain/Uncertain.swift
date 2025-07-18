@@ -1077,9 +1077,16 @@ extension Uncertain where T == Bool {
     extension Uncertain where T == CLLocationSpeed {
         /// Creates an uncertain speed from a CLLocation with speed uncertainty.
         ///
-        /// - Parameter location: The CLLocation with speed and course information.
+        /// - Parameters:
+        ///   - location: The CLLocation with speed and course information.
+        ///   - speedUncertaintyFactor: Factor to estimate speed uncertainty from horizontal accuracy (default: 0.1).
+        ///   - minimumSpeedUncertainty: Minimum speed uncertainty in m/s (default: 0.1).
         /// - Returns: A new uncertain speed value in m/s.
-        public static func speed(from location: CLLocation) -> Uncertain<CLLocationSpeed> {
+        public static func speed(
+            from location: CLLocation,
+            speedUncertaintyFactor: Double = 0.1,
+            minimumSpeedUncertainty: Double = 0.1
+        ) -> Uncertain<CLLocationSpeed> {
             return Uncertain<CLLocationSpeed> {
                 let baseSpeed = location.speed
 
@@ -1089,8 +1096,9 @@ extension Uncertain where T == Bool {
                 }
 
                 // Model speed uncertainty (Core Location doesn't provide direct speed accuracy)
-                // Use a reasonable estimate based on location accuracy and time
-                let speedUncertainty = Swift.max(0.1, location.horizontalAccuracy / 10.0)
+                // Use configurable estimate based on location accuracy
+                let speedUncertainty = Swift.max(
+                    minimumSpeedUncertainty, location.horizontalAccuracy * speedUncertaintyFactor)
                 let uncertainSpeed = abs(
                     Uncertain<Double>.normal(mean: baseSpeed, standardDeviation: speedUncertainty)
                         .sample()
@@ -1105,9 +1113,14 @@ extension Uncertain where T == Bool {
     extension Uncertain where T == CLLocationDirection {
         /// Creates an uncertain course/heading from a CLLocation.
         ///
-        /// - Parameter location: The CLLocation with course information.
+        /// - Parameters:
+        ///   - location: The CLLocation with course information.
+        ///   - courseUncertainty: The uncertainty in course/heading in degrees (default: 5.0).
         /// - Returns: A new uncertain course value in degrees.
-        public static func course(from location: CLLocation) -> Uncertain<CLLocationDirection> {
+        public static func course(
+            from location: CLLocation,
+            courseUncertainty: Double = 5.0
+        ) -> Uncertain<CLLocationDirection> {
             return Uncertain<CLLocationDirection> {
                 let baseCourse = location.course
 
@@ -1116,8 +1129,7 @@ extension Uncertain where T == Bool {
                     return -1
                 }
 
-                // Model course uncertainty
-                let courseUncertainty = 5.0  // degrees - reasonable estimate
+                // Model course uncertainty with configurable parameter
                 let uncertainCourse = Uncertain<Double>.normal(
                     mean: baseCourse, standardDeviation: courseUncertainty
                 ).sample()
