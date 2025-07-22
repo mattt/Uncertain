@@ -566,7 +566,7 @@ extension Uncertain where T == Double {
 
         return Uncertain<Double> {
             // Generate Kumaraswamy using inverse transform sampling
-            let u = Double.random(in: 0.001...0.999)  // Avoid exactly 0 or 1
+            let u = Double.random(in: Double.ulpOfOne..<1.0)  // Avoid exactly 0 or 1
             return pow(1.0 - pow(1.0 - u, 1.0 / b), 1.0 / a)
         }
     }
