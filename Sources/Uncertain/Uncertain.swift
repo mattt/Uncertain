@@ -564,10 +564,14 @@ extension Uncertain where T == Double {
     public static func kumaraswamy(a: Double, b: Double) -> Uncertain<Double> {
         precondition(a > 0 && b > 0, "Kumaraswamy distribution parameters must be positive")
 
+        // Cache reciprocals to avoid repeated division
+        let reciprocalA = 1.0 / a
+        let reciprocalB = 1.0 / b
+
         return Uncertain<Double> {
             // Generate Kumaraswamy using inverse transform sampling
             let u = Double.random(in: Double.ulpOfOne..<1.0)  // Avoid exactly 0 or 1
-            return pow(1.0 - pow(1.0 - u, 1.0 / b), 1.0 / a)
+            return pow(1.0 - pow(1.0 - u, reciprocalB), reciprocalA)
         }
     }
 
