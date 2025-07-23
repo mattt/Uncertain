@@ -244,6 +244,15 @@ let exponential = Uncertain<Double>.exponential(rate: 1.0)
 Models time between events in a [Poisson process][poisson-process]. 
 Common for modeling waiting times and lifetimes.
 
+#### [Kumaraswamy Distribution][kumaraswamy-distribution]
+
+```swift
+let kumaraswamy = Uncertain<Double>.kumaraswamy(a: 2.0, b: 3.0)
+```
+
+A continuous distribution on [0,1] with flexible shapes. 
+Similar to Beta distribution but with simpler mathematical forms.
+
 #### [Binomial Distribution][binomial-distribution]
 
 ```swift
@@ -424,3 +433,4 @@ MIT
 [log-likelihood]: https://en.wikipedia.org/wiki/Likelihood_function#Log-likelihood
 [kernel-density-estimation]: https://en.wikipedia.org/wiki/Kernel_density_estimation
 [rejection-sampling]: https://en.wikipedia.org/wiki/Rejection_sampling
+[kumaraswamy-distribution]: https://en.wikipedia.org/wiki/Kumaraswamy_distribution

@@ -555,6 +555,26 @@ extension Uncertain where T == Double {
         Uncertain<Bool> { Double.random(in: 0...1) < probability }
     }
 
+    /// Creates a Kumaraswamy distribution.
+    ///
+    /// - Parameters:
+    ///   - a: The first shape parameter (must be > 0).
+    ///   - b: The second shape parameter (must be > 0).
+    /// - Returns: A new uncertain value with a Kumaraswamy distribution in range [0, 1].
+    public static func kumaraswamy(a: Double, b: Double) -> Uncertain<Double> {
+        precondition(a > 0 && b > 0, "Kumaraswamy distribution parameters must be positive")
+
+        // Cache reciprocals to avoid repeated division
+        let reciprocalA = 1.0 / a
+        let reciprocalB = 1.0 / b
+
+        return Uncertain<Double> {
+            // Generate Kumaraswamy using inverse transform sampling
+            let u = Double.random(in: Double.ulpOfOne..<1.0)  // Avoid exactly 0 or 1
+            return pow(1.0 - pow(1.0 - u, reciprocalB), reciprocalA)
+        }
+    }
+
     /// Estimates the log-likelihood of a value using kernel density estimation.
     ///
     /// - Parameters:
