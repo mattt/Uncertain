@@ -575,6 +575,24 @@ extension Uncertain where T == Double {
         }
     }
 
+    /// Creates a Rayleigh distribution.
+    ///
+    /// The Rayleigh distribution models the magnitude of a 2D vector whose components
+    /// are normally distributed. It's commonly used for modeling distances from a center point.
+    ///
+    /// - Parameter scale: The scale parameter (must be > 0).
+    /// - Returns: A new uncertain value with a Rayleigh distribution.
+    public static func rayleigh(scale: Double) -> Uncertain<Double> {
+        precondition(scale > 0, "Rayleigh distribution scale parameter must be positive")
+
+        return Uncertain<Double> {
+            // Generate Rayleigh using inverse transform sampling
+            // F^(-1)(u) = scale * sqrt(-2 * ln(1-u))
+            let u = Double.random(in: Double.ulpOfOne..<1.0)  // Avoid exactly 0 or 1
+            return scale * sqrt(-2.0 * log(1.0 - u))
+        }
+    }
+
     /// Estimates the log-likelihood of a value using kernel density estimation.
     ///
     /// - Parameters:
@@ -910,8 +928,9 @@ extension Uncertain where T == Bool {
     extension Uncertain where T == CLLocation {
         /// Creates an uncertain location from a CLLocation.
         ///
-        /// Models GPS uncertainty as a 2D Gaussian distribution
-        /// based on horizontal accuracy.
+        /// Models GPS uncertainty using a Rayleigh distribution
+        /// for radial distance from the true location,
+        /// combined with a uniform angular distribution.
         ///
         /// - Parameter location: The CLLocation with accuracy information.
         /// - Returns: A new uncertain location value.
@@ -925,21 +944,26 @@ extension Uncertain where T == Bool {
                     return location
                 }
 
-                // Model horizontal uncertainty as 2D Gaussian (not uniform circle)
+                // Model horizontal uncertainty using Rayleigh distribution for radial distance
                 let earthRadius = 6_371_000.0  // meters
-                let lat1 = location.coordinate.latitude * .pi / 180
+                let lat = location.coordinate.latitude * .pi / 180
 
-                // Generate offset in meters using 2D Gaussian distribution
-                let northOffset = Uncertain<Double>.normal(
-                    mean: 0, standardDeviation: horizontalAccuracy
+                // Generate radial distance using Rayleigh distribution
+                // horizontalAccuracy represents the standard deviation of GPS error
+                let radialDistance = Uncertain<Double>.rayleigh(
+                    scale: horizontalAccuracy
                 ).sample()
-                let eastOffset = Uncertain<Double>.normal(
-                    mean: 0, standardDeviation: horizontalAccuracy
-                ).sample()
+
+                // Generate random direction (angle) uniformly
+                let angle = Double.random(in: 0...(2 * .pi))
+
+                // Convert polar coordinates to Cartesian offsets
+                let northOffset = radialDistance * cos(angle)
+                let eastOffset = radialDistance * sin(angle)
 
                 // Convert meter offsets to lat/lon
                 let latOffset = northOffset / earthRadius * 180 / .pi
-                let lonOffset = eastOffset / (earthRadius * cos(lat1)) * 180 / .pi
+                let lonOffset = eastOffset / (earthRadius * cos(lat)) * 180 / .pi
 
                 let uncertainCoordinate = CLLocationCoordinate2D(
                     latitude: location.coordinate.latitude + latOffset,
@@ -1045,7 +1069,7 @@ extension Uncertain where T == Bool {
         ///
         /// - Parameters:
         ///   - coordinate: The GPS coordinate.
-        ///   - accuracy: The GPS accuracy in meters (used as standard deviation).
+        ///   - accuracy: The GPS accuracy in meters (used as scale parameter for Rayleigh distribution).
         /// - Returns: A new uncertain coordinate value.
         public static func coordinate(
             _ coordinate: CLLocationCoordinate2D,
@@ -1055,11 +1079,15 @@ extension Uncertain where T == Bool {
                 let earthRadius = 6_371_000.0  // meters
                 let lat1 = coordinate.latitude * .pi / 180
 
-                // Use 2D Gaussian distribution for uncertainty modeling
-                let northOffset = Uncertain<Double>.normal(mean: 0, standardDeviation: accuracy)
-                    .sample()
-                let eastOffset = Uncertain<Double>.normal(mean: 0, standardDeviation: accuracy)
-                    .sample()
+                // Use Rayleigh distribution for radial distance from true location
+                let radialDistance = Uncertain<Double>.rayleigh(scale: accuracy).sample()
+
+                // Generate random direction (angle) uniformly
+                let angle = Double.random(in: 0...(2 * .pi))
+
+                // Convert polar coordinates to Cartesian offsets
+                let northOffset = radialDistance * cos(angle)
+                let eastOffset = radialDistance * sin(angle)
 
                 // Convert meter offsets to lat/lon
                 let latOffset = northOffset / earthRadius * 180 / .pi
