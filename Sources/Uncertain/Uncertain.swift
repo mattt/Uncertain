@@ -928,8 +928,9 @@ extension Uncertain where T == Bool {
     extension Uncertain where T == CLLocation {
         /// Creates an uncertain location from a CLLocation.
         ///
-        /// Models GPS uncertainty as a 2D Gaussian distribution
-        /// based on horizontal accuracy.
+        /// Models GPS uncertainty using a Rayleigh distribution
+        /// for radial distance from the true location,
+        /// combined with a uniform angular distribution.
         ///
         /// - Parameter location: The CLLocation with accuracy information.
         /// - Returns: A new uncertain location value.
@@ -943,21 +944,26 @@ extension Uncertain where T == Bool {
                     return location
                 }
 
-                // Model horizontal uncertainty as 2D Gaussian (not uniform circle)
+                // Model horizontal uncertainty using Rayleigh distribution for radial distance
                 let earthRadius = 6_371_000.0  // meters
-                let lat1 = location.coordinate.latitude * .pi / 180
+                let lat = location.coordinate.latitude * .pi / 180
 
-                // Generate offset in meters using 2D Gaussian distribution
-                let northOffset = Uncertain<Double>.normal(
-                    mean: 0, standardDeviation: horizontalAccuracy
+                // Generate radial distance using Rayleigh distribution
+                // horizontalAccuracy represents the standard deviation of GPS error
+                let radialDistance = Uncertain<Double>.rayleigh(
+                    scale: horizontalAccuracy
                 ).sample()
-                let eastOffset = Uncertain<Double>.normal(
-                    mean: 0, standardDeviation: horizontalAccuracy
-                ).sample()
+
+                // Generate random direction (angle) uniformly
+                let angle = Double.random(in: 0...(2 * .pi))
+
+                // Convert polar coordinates to Cartesian offsets
+                let northOffset = radialDistance * cos(angle)
+                let eastOffset = radialDistance * sin(angle)
 
                 // Convert meter offsets to lat/lon
                 let latOffset = northOffset / earthRadius * 180 / .pi
-                let lonOffset = eastOffset / (earthRadius * cos(lat1)) * 180 / .pi
+                let lonOffset = eastOffset / (earthRadius * cos(lat)) * 180 / .pi
 
                 let uncertainCoordinate = CLLocationCoordinate2D(
                     latitude: location.coordinate.latitude + latOffset,
@@ -1063,7 +1069,7 @@ extension Uncertain where T == Bool {
         ///
         /// - Parameters:
         ///   - coordinate: The GPS coordinate.
-        ///   - accuracy: The GPS accuracy in meters (used as standard deviation).
+        ///   - accuracy: The GPS accuracy in meters (used as scale parameter for Rayleigh distribution).
         /// - Returns: A new uncertain coordinate value.
         public static func coordinate(
             _ coordinate: CLLocationCoordinate2D,
@@ -1073,11 +1079,15 @@ extension Uncertain where T == Bool {
                 let earthRadius = 6_371_000.0  // meters
                 let lat1 = coordinate.latitude * .pi / 180
 
-                // Use 2D Gaussian distribution for uncertainty modeling
-                let northOffset = Uncertain<Double>.normal(mean: 0, standardDeviation: accuracy)
-                    .sample()
-                let eastOffset = Uncertain<Double>.normal(mean: 0, standardDeviation: accuracy)
-                    .sample()
+                // Use Rayleigh distribution for radial distance from true location
+                let radialDistance = Uncertain<Double>.rayleigh(scale: accuracy).sample()
+
+                // Generate random direction (angle) uniformly
+                let angle = Double.random(in: 0...(2 * .pi))
+
+                // Convert polar coordinates to Cartesian offsets
+                let northOffset = radialDistance * cos(angle)
+                let eastOffset = radialDistance * sin(angle)
 
                 // Convert meter offsets to lat/lon
                 let latOffset = northOffset / earthRadius * 180 / .pi
