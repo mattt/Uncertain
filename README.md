@@ -217,6 +217,14 @@ let positive = temperature.filter { $0 > 0 }
 This library comes with built-in constructors for various
 [probability distributions][probability-distribution].
 
+> [!TIP]
+> Check out [this companion project][Uncertain-Distribution-Visualizer],
+> which has interactive visualizations to help you build up an intuition
+> about these probability distributions.
+>
+> ![Screenshot of Uncertain Distribution Visualizer app](https://github.com/mattt/Uncertain-Distribution-Visualizer/raw/main/Assets/normal-dark.png)
+
+
 #### [Normal][normal-distribution] ([Gaussian][normal-distribution]) Distribution
 
 ```swift
@@ -401,7 +409,8 @@ let logLikelihood = normal.logLikelihood(45.0, sampleCount: 1000, bandwidth: 1.0
 
 ## License
 
-MIT
+This project is available under the MIT license. 
+See the LICENSE file for more info.
 
 [bornholt2014uncertain]: https://www.microsoft.com/en-us/research/publication/uncertaint-a-first-order-type-for-uncertain-data-2/
 [corelocation]: https://developer.apple.com/documentation/corelocation
@@ -434,3 +443,4 @@ MIT
 [kernel-density-estimation]: https://en.wikipedia.org/wiki/Kernel_density_estimation
 [rejection-sampling]: https://en.wikipedia.org/wiki/Rejection_sampling
 [kumaraswamy-distribution]: https://en.wikipedia.org/wiki/Kumaraswamy_distribution
+[Uncertain-Distribution-Visualizer]: https://github.com/mattt/Uncertain-Distribution-Visualizer/
