@@ -575,6 +575,24 @@ extension Uncertain where T == Double {
         }
     }
 
+    /// Creates a Rayleigh distribution.
+    ///
+    /// The Rayleigh distribution models the magnitude of a 2D vector whose components
+    /// are normally distributed. It's commonly used for modeling distances from a center point.
+    ///
+    /// - Parameter scale: The scale parameter (must be > 0).
+    /// - Returns: A new uncertain value with a Rayleigh distribution.
+    public static func rayleigh(scale: Double) -> Uncertain<Double> {
+        precondition(scale > 0, "Rayleigh distribution scale parameter must be positive")
+
+        return Uncertain<Double> {
+            // Generate Rayleigh using inverse transform sampling
+            // F^(-1)(u) = scale * sqrt(-2 * ln(1-u))
+            let u = Double.random(in: Double.ulpOfOne..<1.0)  // Avoid exactly 0 or 1
+            return scale * sqrt(-2.0 * log(1.0 - u))
+        }
+    }
+
     /// Estimates the log-likelihood of a value using kernel density estimation.
     ///
     /// - Parameters:

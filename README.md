@@ -261,6 +261,15 @@ let kumaraswamy = Uncertain<Double>.kumaraswamy(a: 2.0, b: 3.0)
 A continuous distribution on [0,1] with flexible shapes. 
 Similar to Beta distribution but with simpler mathematical forms.
 
+#### [Rayleigh Distribution][rayleigh-distribution]
+
+```swift
+let rayleigh = Uncertain<Double>.rayleigh(scale: 1.0)
+```
+
+Models the magnitude of a 2D vector whose components are normally distributed.
+Commonly used for modeling distances from a center point, such as GPS uncertainty.
+
 #### [Binomial Distribution][binomial-distribution]
 
 ```swift
@@ -443,4 +452,5 @@ See the LICENSE file for more info.
 [kernel-density-estimation]: https://en.wikipedia.org/wiki/Kernel_density_estimation
 [rejection-sampling]: https://en.wikipedia.org/wiki/Rejection_sampling
 [kumaraswamy-distribution]: https://en.wikipedia.org/wiki/Kumaraswamy_distribution
+[rayleigh-distribution]: https://en.wikipedia.org/wiki/Rayleigh_distribution
 [Uncertain-Distribution-Visualizer]: https://github.com/mattt/Uncertain-Distribution-Visualizer/
