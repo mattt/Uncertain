@@ -1062,6 +1062,38 @@ extension Uncertain where T == Bool {
                 return degrees
             }
         }
+
+        /// Calculates the distance from this location to another location.
+        ///
+        /// - Parameter location: The destination location.
+        /// - Returns: An uncertain distance value in meters.
+        public func distance(to location: Uncertain<CLLocation>) -> Uncertain<CLLocationDistance> {
+            return Self.distance(from: self, to: location)
+        }
+
+        /// Calculates the distance from this location to a specific location.
+        ///
+        /// - Parameter location: The destination location.
+        /// - Returns: An uncertain distance value in meters.
+        public func distance(to location: CLLocation) -> Uncertain<CLLocationDistance> {
+            return Self.distance(from: self, to: Uncertain<CLLocation>.from(location))
+        }
+
+        /// Calculates the bearing from this location to another location.
+        ///
+        /// - Parameter location: The destination location.
+        /// - Returns: An uncertain bearing value in degrees (0-360).
+        public func bearing(to location: Uncertain<CLLocation>) -> Uncertain<Double> {
+            return Self.bearing(from: self, to: location)
+        }
+
+        /// Calculates the bearing from this location to a specific location.
+        ///
+        /// - Parameter location: The destination location.
+        /// - Returns: An uncertain bearing value in degrees (0-360).
+        public func bearing(to location: CLLocation) -> Uncertain<Double> {
+            return Self.bearing(from: self, to: Uncertain<CLLocation>.from(location))
+        }
     }
 
     extension Uncertain where T == CLLocationCoordinate2D {
@@ -1118,6 +1150,95 @@ extension Uncertain where T == Bool {
                 return loc1.distance(from: loc2)
             }
         }
+
+        /// Calculates the bearing between two uncertain coordinates.
+        ///
+        /// - Parameters:
+        ///   - from: The starting coordinate.
+        ///   - to: The ending coordinate.
+        /// - Returns: An uncertain bearing value in degrees (0-360).
+        public static func bearing(
+            from: Uncertain<CLLocationCoordinate2D>,
+            to: Uncertain<CLLocationCoordinate2D>
+        ) -> Uncertain<Double> {
+            return Uncertain<Double> {
+                let coord1 = from.sample()
+                let coord2 = to.sample()
+
+                let lat1 = coord1.latitude * .pi / 180
+                let lat2 = coord2.latitude * .pi / 180
+                let deltaLon = (coord2.longitude - coord1.longitude) * .pi / 180
+
+                let x = sin(deltaLon) * cos(lat2)
+                let y = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(deltaLon)
+                let bearing = atan2(x, y)
+
+                // Convert to degrees and normalize to 0-360
+                var degrees = bearing * 180 / .pi
+                if degrees < 0 {
+                    degrees += 360
+                }
+                return degrees
+            }
+        }
+
+        /// Calculates the distance from this coordinate to another coordinate.
+        ///
+        /// - Parameter coordinate: The destination coordinate.
+        /// - Returns: An uncertain distance value in meters.
+        public func distance(to coordinate: Uncertain<CLLocationCoordinate2D>) -> Uncertain<
+            CLLocationDistance
+        > {
+            return Self.distance(from: self, to: coordinate)
+        }
+
+        /// Calculates the distance from this coordinate to a specific coordinate.
+        ///
+        /// - Parameter coordinate: The destination coordinate.
+        /// - Returns: An uncertain distance value in meters.
+        public func distance(to coordinate: CLLocationCoordinate2D) -> Uncertain<CLLocationDistance>
+        {
+            return Uncertain<CLLocationDistance> {
+                let coord1 = self.sample()
+                let loc1 = CLLocation(latitude: coord1.latitude, longitude: coord1.longitude)
+                let loc2 = CLLocation(
+                    latitude: coordinate.latitude, longitude: coordinate.longitude)
+                return loc1.distance(from: loc2)
+            }
+        }
+
+        /// Calculates the bearing from this coordinate to another coordinate.
+        ///
+        /// - Parameter coordinate: The destination coordinate.
+        /// - Returns: An uncertain bearing value in degrees (0-360).
+        public func bearing(to coordinate: Uncertain<CLLocationCoordinate2D>) -> Uncertain<Double> {
+            return Self.bearing(from: self, to: coordinate)
+        }
+
+        /// Calculates the bearing from this coordinate to a specific coordinate.
+        ///
+        /// - Parameter coordinate: The destination coordinate.
+        /// - Returns: An uncertain bearing value in degrees (0-360).
+        public func bearing(to coordinate: CLLocationCoordinate2D) -> Uncertain<Double> {
+            return Uncertain<Double> {
+                let coord1 = self.sample()
+
+                let lat1 = coord1.latitude * .pi / 180
+                let lat2 = coordinate.latitude * .pi / 180
+                let deltaLon = (coordinate.longitude - coord1.longitude) * .pi / 180
+
+                let x = sin(deltaLon) * cos(lat2)
+                let y = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(deltaLon)
+                let bearing = atan2(x, y)
+
+                // Convert to degrees and normalize to 0-360
+                var degrees = bearing * 180 / .pi
+                if degrees < 0 {
+                    degrees += 360
+                }
+                return degrees
+            }
+        }
     }
 
     @available(iOS 14.0, macOS 11.0, watchOS 7.0, tvOS 14.0, *)
@@ -1155,6 +1276,24 @@ extension Uncertain where T == Bool {
                 return uncertainSpeed
             }
         }
+
+        /// Checks if this speed exceeds a given speed limit with evidence-based evaluation.
+        ///
+        /// - Parameter speedLimit: The speed limit in m/s.
+        /// - Returns: Uncertain boolean evidence that this speed exceeds the limit.
+        public func exceeds(_ speedLimit: CLLocationSpeed) -> Uncertain<Bool> {
+            return self > speedLimit
+        }
+
+        /// Checks if this speed is within a given range.
+        ///
+        /// - Parameters:
+        ///   - min: The minimum speed in m/s.
+        ///   - max: The maximum speed in m/s.
+        /// - Returns: Uncertain boolean evidence that this speed is within the range.
+        public func isWithin(min: CLLocationSpeed, max: CLLocationSpeed) -> Uncertain<Bool> {
+            return (self >= min) && (self <= max)
+        }
     }
 
     @available(iOS 14.0, macOS 11.0, watchOS 7.0, tvOS 14.0, *)
@@ -1189,6 +1328,67 @@ extension Uncertain where T == Bool {
                 }
                 return normalizedCourse
             }
+        }
+
+        /// Calculates the angular difference between this direction and another direction.
+        ///
+        /// Returns the shortest angular distance between two directions,
+        /// accounting for the circular nature of compass directions.
+        ///
+        /// - Parameter direction: The other direction in degrees.
+        /// - Returns: An uncertain angular difference in degrees (-180 to 180).
+        public func angularDifference(to direction: CLLocationDirection) -> Uncertain<Double> {
+            return self.map { thisCourse in
+                var diff = direction - thisCourse
+
+                // Normalize to [-180, 180] range
+                while diff > 180 {
+                    diff -= 360
+                }
+                while diff < -180 {
+                    diff += 360
+                }
+
+                return diff
+            }
+        }
+
+        /// Calculates the angular difference between this direction and another uncertain direction.
+        ///
+        /// - Parameter direction: The other uncertain direction.
+        /// - Returns: An uncertain angular difference in degrees (-180 to 180).
+        public func angularDifference(to direction: Uncertain<CLLocationDirection>) -> Uncertain<
+            Double
+        > {
+            return Uncertain<Double> {
+                let thisCourse = self.sample()
+                let otherCourse = direction.sample()
+
+                var diff = otherCourse - thisCourse
+
+                // Normalize to [-180, 180] range
+                while diff > 180 {
+                    diff -= 360
+                }
+                while diff < -180 {
+                    diff += 360
+                }
+
+                return diff
+            }
+        }
+
+        /// Checks if this direction is within a given angular range of another direction.
+        ///
+        /// - Parameters:
+        ///   - direction: The target direction in degrees.
+        ///   - tolerance: The angular tolerance in degrees.
+        /// - Returns: Uncertain boolean evidence that this direction is within the tolerance.
+        public func isWithin(_ tolerance: Double, of direction: CLLocationDirection) -> Uncertain<
+            Bool
+        > {
+            let diff = self.angularDifference(to: direction)
+            return diff.map { abs($0) <= tolerance }
         }
     }
 #endif
