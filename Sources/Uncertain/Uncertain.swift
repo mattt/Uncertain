@@ -932,6 +932,10 @@ extension Uncertain where T == Bool {
         /// for radial distance from the true location,
         /// combined with a uniform angular distribution.
         ///
+        /// Uses the location's built-in accuracy values.
+        /// If the location has negative accuracy (indicating invalid readings),
+        /// the location is returned unchanged.
+        ///
         /// - Parameter location: The CLLocation with accuracy information.
         /// - Returns: A new uncertain location value.
         public static func from(_ location: CLLocation) -> Uncertain<CLLocation> {
@@ -986,6 +990,76 @@ extension Uncertain where T == Bool {
                     altitude: uncertainAltitude,
                     horizontalAccuracy: horizontalAccuracy,
                     verticalAccuracy: verticalAccuracy,
+                    timestamp: location.timestamp
+                )
+            }
+        }
+
+        /// Creates an uncertain location from a CLLocation with custom accuracy values.
+        ///
+        /// Models GPS uncertainty using a Rayleigh distribution
+        /// for radial distance from the true location,
+        /// combined with a uniform angular distribution.
+        ///
+        /// This overload allows you to specify custom uncertainty values,
+        /// overriding the location's built-in accuracy measurements.
+        ///
+        /// - Parameters:
+        ///   - location: The CLLocation to use as the base position.
+        ///   - horizontalAccuracy: Custom horizontal accuracy in meters (must be >= 0).
+        ///   - verticalAccuracy: Custom vertical accuracy in meters (optional).
+        /// - Returns: A new uncertain location value with the specified uncertainties.
+        public static func from(
+            _ location: CLLocation,
+            horizontalAccuracy: CLLocationAccuracy,
+            verticalAccuracy: CLLocationAccuracy? = nil
+        ) -> Uncertain<CLLocation> {
+            precondition(horizontalAccuracy >= 0, "Horizontal accuracy must be non-negative")
+
+            return Uncertain<CLLocation> {
+                let vAccuracy = verticalAccuracy ?? location.verticalAccuracy
+
+                // Model horizontal uncertainty using Rayleigh distribution for radial distance
+                let earthRadius = 6_371_000.0  // meters
+                let lat = location.coordinate.latitude * .pi / 180
+
+                // Generate radial distance using Rayleigh distribution
+                let radialDistance = Uncertain<Double>.rayleigh(
+                    scale: horizontalAccuracy
+                ).sample()
+
+                // Generate random direction (angle) uniformly
+                let angle = Double.random(in: 0...(2 * .pi))
+
+                // Convert polar coordinates to Cartesian offsets
+                let northOffset = radialDistance * cos(angle)
+                let eastOffset = radialDistance * sin(angle)
+
+                // Convert meter offsets to lat/lon
+                let latOffset = northOffset / earthRadius * 180 / .pi
+                let lonOffset = eastOffset / (earthRadius * cos(lat)) * 180 / .pi
+
+                let uncertainCoordinate = CLLocationCoordinate2D(
+                    latitude: location.coordinate.latitude + latOffset,
+                    longitude: location.coordinate.longitude + lonOffset
+                )
+
+                // Model altitude uncertainty if available
+                let uncertainAltitude: Double
+                if vAccuracy >= 0 {
+                    uncertainAltitude =
+                        location.altitude
+                        + Uncertain<Double>.normal(mean: 0, standardDeviation: vAccuracy)
+                        .sample()
+                } else {
+                    uncertainAltitude = location.altitude
+                }
+
+                return CLLocation(
+                    coordinate: uncertainCoordinate,
+                    altitude: uncertainAltitude,
+                    horizontalAccuracy: horizontalAccuracy,
+                    verticalAccuracy: vAccuracy,
                     timestamp: location.timestamp
                 )
             }

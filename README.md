@@ -104,6 +104,13 @@ if (distance < 100.0).probability(exceeds: 0.9) {
         print("User should head generally eastward")
     }
 }
+
+// Create uncertain locations from CLLocation objects
+let gpsReading = CLLocation(latitude: 37.7749, longitude: -122.4194)
+let uncertainGPS = Uncertain<CLLocation>.from(gpsReading)  // Uses built-in accuracy
+
+// Or override accuracy if the GPS reading seems too optimistic
+let conservativeGPS = Uncertain<CLLocation>.from(gpsReading, horizontalAccuracy: 20.0)
 ```
 
 ### Hypothesis Testing
