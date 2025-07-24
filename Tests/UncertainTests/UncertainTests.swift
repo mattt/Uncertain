@@ -795,11 +795,11 @@ struct UncertainTests {
                 // Test with different course uncertainties
                 let preciseCourse = Uncertain<CLLocationDirection>.course(
                     from: loc,
-                    courseUncertainty: 2.0
+                    courseAccuracy: 2.0
                 )
                 let roughCourse = Uncertain<CLLocationDirection>.course(
                     from: loc,
-                    courseUncertainty: 15.0
+                    courseAccuracy: 15.0
                 )
 
                 let preciseSamples = (0..<1000).map { _ in preciseCourse.sample() }
@@ -817,6 +817,93 @@ struct UncertainTests {
                 let roughVar = roughSamples.map { pow($0 - 90.0, 2) }.reduce(0, +) / 1000
 
                 #expect(roughVar > preciseVar)
+            }
+        }
+
+        @Test("Course uncertainty from location courseAccuracy")
+        func testCourseUncertaintyFromLocationAccuracy() {
+            if #available(iOS 14.0, macOS 11.0, *) {
+                // Create location with specific courseAccuracy
+                let locWithAccurateCourse = CLLocation(
+                    coordinate: CLLocationCoordinate2D(latitude: 34.0, longitude: -118.0),
+                    altitude: 0,
+                    horizontalAccuracy: 10.0,
+                    verticalAccuracy: 5.0,
+                    course: 180.0,  // South
+                    courseAccuracy: 2.0,  // High accuracy
+                    speed: 10.0,
+                    speedAccuracy: 1.0,
+                    timestamp: Date()
+                )
+
+                let locWithRoughCourse = CLLocation(
+                    coordinate: CLLocationCoordinate2D(latitude: 34.0, longitude: -118.0),
+                    altitude: 0,
+                    horizontalAccuracy: 10.0,
+                    verticalAccuracy: 5.0,
+                    course: 180.0,  // South
+                    courseAccuracy: 20.0,  // Low accuracy
+                    speed: 10.0,
+                    speedAccuracy: 1.0,
+                    timestamp: Date()
+                )
+
+                // Test that the library uses the location's built-in courseAccuracy
+                let accurateCourse = Uncertain<CLLocationDirection>.course(
+                    from: locWithAccurateCourse)
+                let roughCourse = Uncertain<CLLocationDirection>.course(from: locWithRoughCourse)
+
+                let accurateSamples = (0..<1000).map { _ in accurateCourse.sample() }
+                let roughSamples = (0..<1000).map { _ in roughCourse.sample() }
+
+                // Both should be centered around 180 degrees
+                let accurateMean = accurateSamples.reduce(0, +) / 1000
+                let roughMean = roughSamples.reduce(0, +) / 1000
+
+                #expect(abs(accurateMean - 180.0) < 5.0)
+                #expect(abs(roughMean - 180.0) < 15.0)
+
+                // Rough course should have higher variance than accurate course
+                let accurateVar = accurateSamples.map { pow($0 - 180.0, 2) }.reduce(0, +) / 1000
+                let roughVar = roughSamples.map { pow($0 - 180.0, 2) }.reduce(0, +) / 1000
+
+                #expect(roughVar > accurateVar * 2)  // Should be significantly more variable
+
+                // Test invalid course handling
+                let locWithInvalidCourse = CLLocation(
+                    coordinate: CLLocationCoordinate2D(latitude: 34.0, longitude: -118.0),
+                    altitude: 0,
+                    horizontalAccuracy: 10.0,
+                    verticalAccuracy: 5.0,
+                    course: -1.0,  // Invalid course
+                    courseAccuracy: 5.0,
+                    speed: 10.0,
+                    speedAccuracy: 1.0,
+                    timestamp: Date()
+                )
+
+                let invalidCourse = Uncertain<CLLocationDirection>.course(
+                    from: locWithInvalidCourse)
+                let invalidSample = invalidCourse.sample()
+                #expect(invalidSample == -1.0)  // Should return invalid course unchanged
+
+                // Test invalid courseAccuracy handling
+                let locWithInvalidAccuracy = CLLocation(
+                    coordinate: CLLocationCoordinate2D(latitude: 34.0, longitude: -118.0),
+                    altitude: 0,
+                    horizontalAccuracy: 10.0,
+                    verticalAccuracy: 5.0,
+                    course: 90.0,  // Valid course
+                    courseAccuracy: -1.0,  // Invalid accuracy
+                    speed: 10.0,
+                    speedAccuracy: 1.0,
+                    timestamp: Date()
+                )
+
+                let invalidAccuracyCourse = Uncertain<CLLocationDirection>.course(
+                    from: locWithInvalidAccuracy)
+                let invalidAccuracySample = invalidAccuracyCourse.sample()
+                #expect(invalidAccuracySample == 90.0)  // Should return base course unchanged
             }
         }
 
@@ -960,7 +1047,7 @@ struct UncertainTests {
 
                 let course = Uncertain<CLLocationDirection>.course(
                     from: locNorth,
-                    courseUncertainty: 10.0  // Large uncertainty to test boundary
+                    courseAccuracy: 10.0  // Large uncertainty to test boundary
                 )
 
                 let samples = (0..<1000).map { _ in course.sample() }
@@ -1191,7 +1278,7 @@ struct UncertainTests {
                         speed: 10.0,
                         timestamp: Date()
                     ),
-                    courseUncertainty: 2.0
+                    courseAccuracy: 2.0
                 )
 
                 let boundaryDiff = northDirection.angularDifference(to: 350.0)
@@ -1268,7 +1355,7 @@ struct UncertainTests {
                         speed: 15.0,
                         timestamp: Date()
                     ),
-                    courseUncertainty: 8.0
+                    courseAccuracy: 8.0
                 )
 
                 let desiredHeading = 50.0  // Slightly more east

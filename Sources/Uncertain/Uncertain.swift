@@ -12,7 +12,6 @@ import Foundation
 /// ```swift
 /// let speed = Uncertain.normal(mean: 5.0, standardDeviation: 2.0)
 ///
-/// // Paper-style conditionals: ask about evidence, not boolean facts
 /// if (speed > 4.0).probability(exceeds: 0.9) {
 ///     print("90% confident you're going fast")
 /// }
@@ -1374,25 +1373,63 @@ extension Uncertain where T == Bool {
     extension Uncertain where T == CLLocationDirection {
         /// Creates an uncertain course/heading from a CLLocation.
         ///
+        /// Models course uncertainty using the location's built-in courseAccuracy value.
+        /// If the location has negative course or courseAccuracy
+        /// (indicating invalid readings),
+        /// the course is returned unchanged.
+        ///
+        /// - Parameter location: The CLLocation with course and courseAccuracy information.
+        /// - Returns: A new uncertain course value in degrees.
+        public static func course(from location: CLLocation) -> Uncertain<CLLocationDirection> {
+            return Uncertain<CLLocationDirection> {
+                let baseCourse = location.course
+                let courseAccuracy = location.courseAccuracy
+
+                // If course or courseAccuracy is negative, the reading is invalid
+                guard baseCourse >= 0, courseAccuracy >= 0 else {
+                    return baseCourse
+                }
+
+                // Model course uncertainty using the location's courseAccuracy
+                let uncertainCourse = Uncertain<Double>.normal(
+                    mean: baseCourse, standardDeviation: courseAccuracy
+                ).sample()
+
+                // Normalize to 0-360 degrees
+                var normalizedCourse = uncertainCourse.truncatingRemainder(dividingBy: 360)
+                if normalizedCourse < 0 {
+                    normalizedCourse += 360
+                }
+                return normalizedCourse
+            }
+        }
+
+        /// Creates an uncertain course/heading from a CLLocation with custom accuracy.
+        ///
+        /// This overload allows you to specify custom uncertainty values,
+        /// overriding the location's built-in courseAccuracy measurement.
+        ///
         /// - Parameters:
         ///   - location: The CLLocation with course information.
-        ///   - courseUncertainty: The uncertainty in course/heading in degrees (default: 5.0).
+        ///   - courseAccuracy: Custom course accuracy in degrees (must be >= 0).
         /// - Returns: A new uncertain course value in degrees.
         public static func course(
             from location: CLLocation,
-            courseUncertainty: Double = 5.0
+            courseAccuracy: CLLocationAccuracy
         ) -> Uncertain<CLLocationDirection> {
+            precondition(courseAccuracy >= 0, "Course accuracy must be non-negative")
+
             return Uncertain<CLLocationDirection> {
                 let baseCourse = location.course
 
                 // If course is negative, it's invalid
                 guard baseCourse >= 0 else {
-                    return -1
+                    return baseCourse
                 }
 
-                // Model course uncertainty with configurable parameter
+                // Model course uncertainty with the specified accuracy
                 let uncertainCourse = Uncertain<Double>.normal(
-                    mean: baseCourse, standardDeviation: courseUncertainty
+                    mean: baseCourse, standardDeviation: courseAccuracy
                 ).sample()
 
                 // Normalize to 0-360 degrees
