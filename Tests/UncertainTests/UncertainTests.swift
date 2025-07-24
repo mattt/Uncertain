@@ -14,10 +14,8 @@ struct UncertainTests {
         let temperature = Uncertain<Double>.normal(mean: 1.0, standardDeviation: 2.0)
         let freezingPoint = 0.0
 
-        // This is the key insight: comparisons return Uncertain<Bool>
-        let freezingEvidence = temperature < freezingPoint
-
         // Test that we get an Uncertain<Bool> back
+        let freezingEvidence = temperature < freezingPoint
         #expect(type(of: freezingEvidence) == Uncertain<Bool>.self)
 
         // Test different confidence levels
@@ -662,8 +660,20 @@ struct UncertainTests {
             let meanDistance = (0..<1000).map { _ in distance.sample() }.reduce(0, +) / 1000
             let meanBearing = (0..<1000).map { _ in bearing.sample() }.reduce(0, +) / 1000
             // Should be close to the true distance and bearing
-            let trueA = CLLocation(latitude: 37.7749, longitude: -122.4194)
-            let trueB = CLLocation(latitude: 37.7750, longitude: -122.4184)
+            let trueA = CLLocation(
+                coordinate: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
+                altitude: 0,
+                horizontalAccuracy: 1.0,
+                verticalAccuracy: 1.0,
+                timestamp: Date()
+            )
+            let trueB = CLLocation(
+                coordinate: CLLocationCoordinate2D(latitude: 37.7750, longitude: -122.4184),
+                altitude: 0,
+                horizontalAccuracy: 1.0,
+                verticalAccuracy: 1.0,
+                timestamp: Date()
+            )
             let trueDistance = trueA.distance(from: trueB)
             #expect(abs(meanDistance - trueDistance) < 10.0)
             #expect(meanBearing >= 0 && meanBearing <= 360)
@@ -677,8 +687,20 @@ struct UncertainTests {
             let b = Uncertain<CLLocationCoordinate2D>.coordinate(coordB, accuracy: 8.0)
             let distance = Uncertain<CLLocationCoordinate2D>.distance(from: a, to: b)
             let meanDistance = (0..<1000).map { _ in distance.sample() }.reduce(0, +) / 1000
-            let trueA = CLLocation(latitude: coordA.latitude, longitude: coordA.longitude)
-            let trueB = CLLocation(latitude: coordB.latitude, longitude: coordB.longitude)
+            let trueA = CLLocation(
+                coordinate: coordA,
+                altitude: 0,
+                horizontalAccuracy: 1.0,
+                verticalAccuracy: 1.0,
+                timestamp: Date()
+            )
+            let trueB = CLLocation(
+                coordinate: coordB,
+                altitude: 0,
+                horizontalAccuracy: 1.0,
+                verticalAccuracy: 1.0,
+                timestamp: Date()
+            )
             let trueDistance = trueA.distance(from: trueB)
             #expect(abs(meanDistance - trueDistance) < 15.0)
         }
@@ -745,13 +767,14 @@ struct UncertainTests {
                     speedUncertaintyFactor: 0.2,
                     minimumSpeedUncertainty: 0.1
                 )
-                
+
                 let conservativeSamples = (0..<1000).map { _ in conservativeSpeed.sample() }
                 let liberalSamples = (0..<1000).map { _ in liberalSpeed.sample() }
-                
-                let conservativeStd = sqrt(conservativeSamples.map { pow($0 - 10.0, 2) }.reduce(0, +) / 1000)
+
+                let conservativeStd = sqrt(
+                    conservativeSamples.map { pow($0 - 10.0, 2) }.reduce(0, +) / 1000)
                 let liberalStd = sqrt(liberalSamples.map { pow($0 - 10.0, 2) }.reduce(0, +) / 1000)
-                
+
                 // Liberal should have higher uncertainty
                 #expect(liberalStd > conservativeStd)
             }
@@ -778,21 +801,21 @@ struct UncertainTests {
                     from: loc,
                     courseUncertainty: 15.0
                 )
-                
+
                 let preciseSamples = (0..<1000).map { _ in preciseCourse.sample() }
                 let roughSamples = (0..<1000).map { _ in roughCourse.sample() }
-                
+
                 // Both should be centered around 90 degrees
                 let preciseMean = preciseSamples.reduce(0, +) / 1000
                 let roughMean = roughSamples.reduce(0, +) / 1000
-                
+
                 #expect(abs(preciseMean - 90.0) < 2.0)
                 #expect(abs(roughMean - 90.0) < 10.0)
-                
+
                 // Rough should have higher variance
                 let preciseVar = preciseSamples.map { pow($0 - 90.0, 2) }.reduce(0, +) / 1000
                 let roughVar = roughSamples.map { pow($0 - 90.0, 2) }.reduce(0, +) / 1000
-                
+
                 #expect(roughVar > preciseVar)
             }
         }
@@ -804,24 +827,24 @@ struct UncertainTests {
                 coordinate: CLLocationCoordinate2D(latitude: 34.0, longitude: -118.0),
                 altitude: 0,
                 horizontalAccuracy: -1.0,  // Invalid
-                verticalAccuracy: -1.0,    // Invalid
-                course: -1.0,              // Invalid
-                speed: -1.0,               // Invalid
+                verticalAccuracy: -1.0,  // Invalid
+                course: -1.0,  // Invalid
+                speed: -1.0,  // Invalid
                 timestamp: Date()
             )
-            
+
             let uncertainLoc = Uncertain<CLLocation>.from(invalidLoc)
             let sample = uncertainLoc.sample()
-            
+
             // Should return original location when accuracy is invalid
             #expect(sample.coordinate.latitude == invalidLoc.coordinate.latitude)
             #expect(sample.coordinate.longitude == invalidLoc.coordinate.longitude)
-            
+
             if #available(iOS 14.0, macOS 11.0, *) {
                 // Speed and course should return -1 for invalid data
                 let speed = Uncertain<CLLocationSpeed>.speed(from: invalidLoc)
                 let course = Uncertain<CLLocationDirection>.course(from: invalidLoc)
-                
+
                 #expect(speed.sample() == -1.0)
                 #expect(course.sample() == -1.0)
             }
@@ -831,28 +854,29 @@ struct UncertainTests {
         func testGPSUncertaintyModelingVsNaive() {
             let baseCoord = CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194)
             let accuracy = 10.0
-            
+
             // Test the improved coordinate method
-            let uncertainCoord = Uncertain<CLLocationCoordinate2D>.coordinate(baseCoord, accuracy: accuracy)
-            
+            let uncertainCoord = Uncertain<CLLocationCoordinate2D>.coordinate(
+                baseCoord, accuracy: accuracy)
+
             // Sample many times to check distribution
             let samples = (0..<1000).map { _ in uncertainCoord.sample() }
             let latOffsets = samples.map { $0.latitude - baseCoord.latitude }
             let lonOffsets = samples.map { $0.longitude - baseCoord.longitude }
-            
+
             // Mean should be close to base coordinate
             let meanLatOffset = latOffsets.reduce(0, +) / 1000
             let meanLonOffset = lonOffsets.reduce(0, +) / 1000
-            
+
             #expect(abs(meanLatOffset) < 0.001)
             #expect(abs(meanLonOffset) < 0.001)
-            
+
             // Should have reasonable distribution (not too tight, not too loose)
             let latStd = sqrt(latOffsets.map { pow($0, 2) }.reduce(0, +) / 1000)
             let lonStd = sqrt(lonOffsets.map { pow($0, 2) }.reduce(0, +) / 1000)
-            
+
             #expect(latStd > 0.00005)  // Not too tight
-            #expect(latStd < 0.01)     // Not too loose
+            #expect(latStd < 0.01)  // Not too loose
             #expect(lonStd > 0.00005)
             #expect(lonStd < 0.01)
         }
@@ -866,19 +890,19 @@ struct UncertainTests {
                 verticalAccuracy: 3.0,
                 timestamp: Date()
             )
-            
+
             let uncertainLoc = Uncertain<CLLocation>.from(baseLoc)
             let samples = (0..<1000).map { _ in uncertainLoc.sample() }
             let altitudes = samples.map { $0.altitude }
-            
+
             // Mean should be close to base altitude
             let meanAlt = altitudes.reduce(0, +) / 1000
             #expect(abs(meanAlt - 100.0) < 1.0)
-            
+
             // Should have reasonable altitude uncertainty
             let altStd = sqrt(altitudes.map { pow($0 - 100.0, 2) }.reduce(0, +) / 1000)
             #expect(altStd > 1.0)  // Should have some uncertainty
-            #expect(altStd < 10.0) // But not too much
+            #expect(altStd < 10.0)  // But not too much
         }
 
         @Test("Location uncertainty propagation in calculations")
@@ -888,31 +912,32 @@ struct UncertainTests {
                 horizontalAccuracy: 10.0,
                 altitude: 50.0
             )
-            
+
             let locB = Uncertain<CLLocation>.location(
                 coordinate: CLLocationCoordinate2D(latitude: 37.7849, longitude: -122.4094),
                 horizontalAccuracy: 10.0,
                 altitude: 60.0
             )
-            
+
             // Calculate uncertain distance and bearing
             let distance = Uncertain<CLLocation>.distance(from: locA, to: locB)
             let bearing = Uncertain<CLLocation>.bearing(from: locA, to: locB)
-            
+
             // Test that uncertainty propagates correctly
             let distanceSamples = (0..<1000).map { _ in distance.sample() }
             let bearingSamples = (0..<1000).map { _ in bearing.sample() }
-            
+
             // Distance should be around 1.5km (rough estimate)
             let meanDistance = distanceSamples.reduce(0, +) / 1000
             #expect(meanDistance > 1000)  // > 1km
             #expect(meanDistance < 3000)  // < 3km
-            
+
             // Should have reasonable uncertainty in distance
-            let distanceStd = sqrt(distanceSamples.map { pow($0 - meanDistance, 2) }.reduce(0, +) / 1000)
-            #expect(distanceStd > 5.0)   // Some uncertainty
+            let distanceStd = sqrt(
+                distanceSamples.map { pow($0 - meanDistance, 2) }.reduce(0, +) / 1000)
+            #expect(distanceStd > 5.0)  // Some uncertainty
             #expect(distanceStd < 50.0)  // Not too much
-            
+
             // Bearing should be roughly northeast
             let meanBearing = bearingSamples.reduce(0, +) / 1000
             #expect(meanBearing >= 0)
@@ -932,17 +957,17 @@ struct UncertainTests {
                     speed: 10.0,
                     timestamp: Date()
                 )
-                
+
                 let course = Uncertain<CLLocationDirection>.course(
                     from: locNorth,
                     courseUncertainty: 10.0  // Large uncertainty to test boundary
                 )
-                
+
                 let samples = (0..<1000).map { _ in course.sample() }
-                
+
                 // All samples should be in valid range [0, 360)
                 #expect(samples.allSatisfy { $0 >= 0 && $0 < 360 })
-                
+
                 // Test with course at exact boundary
                 let locExact = CLLocation(
                     coordinate: CLLocationCoordinate2D(latitude: 34.0, longitude: -118.0),
@@ -953,12 +978,380 @@ struct UncertainTests {
                     speed: 10.0,
                     timestamp: Date()
                 )
-                
+
                 let exactCourse = Uncertain<CLLocationDirection>.course(from: locExact)
                 let exactSamples = (0..<100).map { _ in exactCourse.sample() }
-                
+
                 #expect(exactSamples.allSatisfy { $0 >= 0 && $0 < 360 })
             }
+        }
+
+        @Test("CLLocation instance methods for distance calculations")
+        func testCLLocationInstanceMethods() {
+            let locA = Uncertain<CLLocation>.location(
+                coordinate: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
+                horizontalAccuracy: 5.0
+            )
+            let locB = Uncertain<CLLocation>.location(
+                coordinate: CLLocationCoordinate2D(latitude: 37.7849, longitude: -122.4094),
+                horizontalAccuracy: 5.0
+            )
+            let specificLoc = CLLocation(
+                coordinate: CLLocationCoordinate2D(latitude: 37.7849, longitude: -122.4094),
+                altitude: 0,
+                horizontalAccuracy: 5.0,
+                verticalAccuracy: 5.0,
+                timestamp: Date()
+            )
+
+            // Test instance methods vs static methods
+            let instanceDistance1 = locA.distance(to: locB)
+            let instanceDistance2 = locA.distance(to: specificLoc)
+            let staticDistance = Uncertain<CLLocation>.distance(from: locA, to: locB)
+
+            let instanceBearing1 = locA.bearing(to: locB)
+            let instanceBearing2 = locA.bearing(to: specificLoc)
+            let staticBearing = Uncertain<CLLocation>.bearing(from: locA, to: locB)
+
+            // Compare means to ensure equivalence
+            let instanceDist1Mean =
+                (0..<100).map { _ in instanceDistance1.sample() }.reduce(0, +) / 100
+            let instanceDist2Mean =
+                (0..<100).map { _ in instanceDistance2.sample() }.reduce(0, +) / 100
+            let staticDistMean = (0..<100).map { _ in staticDistance.sample() }.reduce(0, +) / 100
+
+            let instanceBear1Mean =
+                (0..<100).map { _ in instanceBearing1.sample() }.reduce(0, +) / 100
+            let instanceBear2Mean =
+                (0..<100).map { _ in instanceBearing2.sample() }.reduce(0, +) / 100
+            let staticBearMean = (0..<100).map { _ in staticBearing.sample() }.reduce(0, +) / 100
+
+            // Instance and static methods should be equivalent
+            #expect(abs(instanceDist1Mean - staticDistMean) < 50)
+            #expect(abs(instanceBear1Mean - staticBearMean) < 10)
+
+            // Distance to specific location should be reasonable
+            #expect(instanceDist2Mean > 500)  // Should be some distance
+            #expect(instanceDist2Mean < 3000)  // But not too far
+
+            // Bearing to specific location should be valid
+            #expect(instanceBear2Mean >= 0)
+            #expect(instanceBear2Mean <= 360)
+        }
+
+        @Test("CLLocationCoordinate2D instance methods")
+        func testCLLocationCoordinate2DInstanceMethods() {
+            let coordA = Uncertain<CLLocationCoordinate2D>.coordinate(
+                CLLocationCoordinate2D(latitude: 40.7128, longitude: -74.0060),
+                accuracy: 8.0
+            )
+            let coordB = Uncertain<CLLocationCoordinate2D>.coordinate(
+                CLLocationCoordinate2D(latitude: 40.7589, longitude: -73.9851),
+                accuracy: 8.0
+            )
+            let specificCoord = CLLocationCoordinate2D(latitude: 40.7589, longitude: -73.9851)
+
+            // Test distance methods
+            let instanceDistance1 = coordA.distance(to: coordB)
+            let instanceDistance2 = coordA.distance(to: specificCoord)
+            let staticDistance = Uncertain<CLLocationCoordinate2D>.distance(
+                from: coordA, to: coordB)
+
+            // Test bearing methods
+            let instanceBearing1 = coordA.bearing(to: coordB)
+            let instanceBearing2 = coordA.bearing(to: specificCoord)
+            let staticBearing = Uncertain<CLLocationCoordinate2D>.bearing(from: coordA, to: coordB)
+
+            // Sample to check equivalence
+            let instanceDist1Mean =
+                (0..<100).map { _ in instanceDistance1.sample() }.reduce(0, +) / 100
+            let instanceDist2Mean =
+                (0..<100).map { _ in instanceDistance2.sample() }.reduce(0, +) / 100
+            let staticDistMean = (0..<100).map { _ in staticDistance.sample() }.reduce(0, +) / 100
+
+            let instanceBear1Mean =
+                (0..<100).map { _ in instanceBearing1.sample() }.reduce(0, +) / 100
+            let instanceBear2Mean =
+                (0..<100).map { _ in instanceBearing2.sample() }.reduce(0, +) / 100
+            let staticBearMean = (0..<100).map { _ in staticBearing.sample() }.reduce(0, +) / 100
+
+            // Should be equivalent to static methods
+            #expect(abs(instanceDist1Mean - staticDistMean) < 100)
+            #expect(abs(instanceBear1Mean - staticBearMean) < 15)
+
+            // Distance between NYC coordinates should be reasonable (~5-6km)
+            #expect(instanceDist2Mean > 3000)
+            #expect(instanceDist2Mean < 8000)
+
+            // Bearing should be valid
+            #expect(instanceBear2Mean >= 0)
+            #expect(instanceBear2Mean <= 360)
+        }
+
+        @Test("CLLocationSpeed instance methods for unit conversions")
+        func testCLLocationSpeedInstanceMethods() {
+            if #available(iOS 14.0, macOS 11.0, *) {
+                let baseSpeed = 20.0  // 20 m/s
+                let location = CLLocation(
+                    coordinate: CLLocationCoordinate2D(latitude: 34.0, longitude: -118.0),
+                    altitude: 0,
+                    horizontalAccuracy: 5.0,
+                    verticalAccuracy: 5.0,
+                    course: 90.0,
+                    speed: baseSpeed,
+                    timestamp: Date()
+                )
+
+                let uncertainSpeed = Uncertain<CLLocationSpeed>.speed(from: location)
+
+                // Test speed comparison methods
+                let speedLimit = 15.0  // m/s
+                let exceedsLimit = uncertainSpeed.exceeds(speedLimit)
+                let withinRange = uncertainSpeed.isWithin(min: 18.0, max: 22.0)
+
+                // With base speed 20 m/s, should exceed 15 m/s limit
+                let exceedsResult = exceedsLimit.probability(exceeds: 0.5)
+                #expect(exceedsResult == true)
+
+                // Should be within 18-22 m/s range
+                let withinResult = withinRange.probability(exceeds: 0.5)
+                #expect(withinResult == true)
+
+                // Test evidence-based evaluation
+                let definitelyFast = exceedsLimit.probability(exceeds: 0.9)
+                #expect(definitelyFast == true)
+            }
+        }
+
+        @Test("CLLocationDirection instance methods for angular calculations")
+        func testCLLocationDirectionInstanceMethods() {
+            if #available(iOS 14.0, macOS 11.0, *) {
+                let baseCourse = 90.0  // Due east
+                let location = CLLocation(
+                    coordinate: CLLocationCoordinate2D(latitude: 34.0, longitude: -118.0),
+                    altitude: 0,
+                    horizontalAccuracy: 5.0,
+                    verticalAccuracy: 5.0,
+                    course: baseCourse,
+                    speed: 10.0,
+                    timestamp: Date()
+                )
+
+                let uncertainDirection = Uncertain<CLLocationDirection>.course(from: location)
+
+                // Test angular difference calculations
+                let targetDirection1 = 45.0  // 45° difference
+                let targetDirection2 = 135.0  // 45° difference (other direction)
+
+                let diff1 = uncertainDirection.angularDifference(to: targetDirection1)
+                let diff2 = uncertainDirection.angularDifference(to: targetDirection2)
+
+                let diff1Mean = (0..<100).map { _ in diff1.sample() }.reduce(0, +) / 100
+                let diff2Mean = (0..<100).map { _ in diff2.sample() }.reduce(0, +) / 100
+
+                // Expected differences: -45°, +45°, +180°
+                #expect(abs(diff1Mean - (-45.0)) < 10)
+                #expect(abs(diff2Mean - 45.0) < 10)
+
+                // Test angular difference with uncertain direction
+                let targetUncertain = Uncertain<CLLocationDirection>.course(
+                    from: CLLocation(
+                        coordinate: CLLocationCoordinate2D(latitude: 34.0, longitude: -118.0),
+                        altitude: 0,
+                        horizontalAccuracy: 5.0,
+                        verticalAccuracy: 5.0,
+                        course: 45.0,
+                        speed: 10.0,
+                        timestamp: Date()
+                    )
+                )
+
+                let uncertainDiff = uncertainDirection.angularDifference(to: targetUncertain)
+                let uncertainDiffMean =
+                    (0..<100).map { _ in uncertainDiff.sample() }.reduce(0, +) / 100
+
+                // Should be approximately -45° (90° - 45°)
+                #expect(abs(uncertainDiffMean - (-45.0)) < 15)
+
+                // Test within tolerance check
+                let withinTolerance = uncertainDirection.isWithin(10.0, of: 85.0)
+                let toleranceResult = withinTolerance.probability(exceeds: 0.5)
+
+                // 90° should be within 10° of 85°
+                #expect(toleranceResult == true)
+
+                // Test edge case around 0/360 boundary
+                let northDirection = Uncertain<CLLocationDirection>.course(
+                    from: CLLocation(
+                        coordinate: CLLocationCoordinate2D(latitude: 34.0, longitude: -118.0),
+                        altitude: 0,
+                        horizontalAccuracy: 5.0,
+                        verticalAccuracy: 5.0,
+                        course: 0.0,
+                        speed: 10.0,
+                        timestamp: Date()
+                    ),
+                    courseUncertainty: 2.0
+                )
+
+                let boundaryDiff = northDirection.angularDifference(to: 350.0)
+                let boundaryDiffMean =
+                    (0..<100).map { _ in boundaryDiff.sample() }.reduce(0, +) / 100
+
+                // 0° to 350° should be -10° (shortest path)
+                #expect(abs(boundaryDiffMean - (-10.0)) < 5)
+            }
+        }
+
+        @Test("Speed limit enforcement example with instance methods")
+        func testSpeedLimitEnforcementWithInstanceMethods() {
+            if #available(iOS 14.0, macOS 11.0, *) {
+                // Simulate a speed enforcement scenario
+                let location = CLLocation(
+                    coordinate: CLLocationCoordinate2D(latitude: 34.0, longitude: -118.0),
+                    altitude: 0,
+                    horizontalAccuracy: 8.0,
+                    verticalAccuracy: 5.0,
+                    course: 90.0,
+                    speed: 28.0,  // 28 m/s ≈ 63 mph
+                    timestamp: Date()
+                )
+
+                let uncertainSpeed = Uncertain<CLLocationSpeed>.speed(from: location)
+
+                // Different speed limits
+                let cityLimit = 25.0 * 0.44704  // 25 mph in m/s
+                let highwayLimit = 65.0 * 0.44704  // 65 mph in m/s
+
+                // Test evidence-based enforcement
+                let exceedsCityLimit = uncertainSpeed.exceeds(cityLimit)
+                let exceedsHighwayLimit = uncertainSpeed.exceeds(highwayLimit)
+
+                // Conservative enforcement (95% confidence)
+                let conservativeCity = exceedsCityLimit.probability(exceeds: 0.95)
+                let conservativeHighway = exceedsHighwayLimit.probability(exceeds: 0.95)
+
+                // Standard enforcement (>50% confidence)
+                let standardCity = ~exceedsCityLimit
+                let standardHighway = ~exceedsHighwayLimit
+
+                // At 28 m/s (≈63 mph):
+                // - Should exceed 25 mph city limit
+                // - Should not exceed 65 mph highway limit
+                #expect(conservativeCity == true)
+                #expect(standardCity == true)
+                #expect(conservativeHighway == false)
+                #expect(standardHighway == false)
+
+                // Test speed range checking
+                let legalHighwayRange = uncertainSpeed.isWithin(
+                    min: 20.0 * 0.44704,  // 20 mph minimum
+                    max: 65.0 * 0.44704  // 65 mph maximum
+                )
+
+                let inLegalRange = legalHighwayRange.probability(exceeds: 0.8)
+                #expect(inLegalRange == true)
+            }
+        }
+
+        @Test("Navigation accuracy with direction instance methods")
+        func testNavigationAccuracyWithDirectionInstanceMethods() {
+            if #available(iOS 14.0, macOS 11.0, *) {
+                // Simulate a navigation scenario
+                let currentHeading = Uncertain<CLLocationDirection>.course(
+                    from: CLLocation(
+                        coordinate: CLLocationCoordinate2D(latitude: 34.0, longitude: -118.0),
+                        altitude: 0,
+                        horizontalAccuracy: 5.0,
+                        verticalAccuracy: 5.0,
+                        course: 45.0,  // Northeast
+                        speed: 15.0,
+                        timestamp: Date()
+                    ),
+                    courseUncertainty: 8.0
+                )
+
+                let desiredHeading = 50.0  // Slightly more east
+                let acceptableTolerance = 15.0  // ±15 degrees
+
+                // Test if we're on course
+                let onCourse = currentHeading.isWithin(acceptableTolerance, of: desiredHeading)
+                let navigationAccurate = onCourse.probability(exceeds: 0.8)
+
+                // Should be on course (45° is within 15° of 50°)
+                #expect(navigationAccurate == true)
+
+                // Test course correction needed
+                let courseCorrection = currentHeading.angularDifference(to: desiredHeading)
+                let correctionMean =
+                    (0..<200).map { _ in courseCorrection.sample() }.reduce(0, +) / 200
+
+                // Should need about +5° correction (50° - 45°)
+                #expect(abs(correctionMean - 5.0) < 3.0)
+
+                // Test with larger course deviation
+                let severeDeviation = currentHeading.isWithin(5.0, of: 90.0)
+                let severelyOffCourse = severeDeviation.probability(exceeds: 0.5)
+
+                // 45° should NOT be within 5° of 90°
+                #expect(severelyOffCourse == false)
+            }
+        }
+
+        @Test("Complex location calculations with instance methods")
+        func testComplexLocationCalculationsWithInstanceMethods() {
+            // Test chaining of instance methods for complex calculations
+            let startLocation = Uncertain<CLLocation>.location(
+                coordinate: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
+                horizontalAccuracy: 10.0
+            )
+
+            let checkpoint1 = CLLocation(
+                coordinate: CLLocationCoordinate2D(latitude: 37.7849, longitude: -122.4094),
+                altitude: 0,
+                horizontalAccuracy: 5.0,
+                verticalAccuracy: 5.0,
+                timestamp: Date()
+            )
+            let checkpoint2 = CLLocation(
+                coordinate: CLLocationCoordinate2D(latitude: 37.7949, longitude: -122.3994),
+                altitude: 0,
+                horizontalAccuracy: 5.0,
+                verticalAccuracy: 5.0,
+                timestamp: Date()
+            )
+
+            // Calculate distances to checkpoints
+            let distanceToCheckpoint1 = startLocation.distance(to: checkpoint1)
+            let distanceToCheckpoint2 = startLocation.distance(to: checkpoint2)
+
+            // Calculate bearings to checkpoints
+            let bearingToCheckpoint1 = startLocation.bearing(to: checkpoint1)
+            let bearingToCheckpoint2 = startLocation.bearing(to: checkpoint2)
+
+            // Test evidence-based decisions
+            let closeToCheckpoint1 = distanceToCheckpoint1 < 2000.0  // Within 2km
+            let closeToCheckpoint2 = distanceToCheckpoint2 < 3000.0  // Within 3km
+
+            let checkpoint1Reachable = closeToCheckpoint1.probability(exceeds: 0.9)
+            let checkpoint2Reachable = closeToCheckpoint2.probability(exceeds: 0.9)
+
+            #expect(checkpoint1Reachable == true)
+            #expect(checkpoint2Reachable == true)
+
+            // Test bearing calculations are reasonable
+            let bearing1Samples = (0..<100).map { _ in bearingToCheckpoint1.sample() }
+            let bearing2Samples = (0..<100).map { _ in bearingToCheckpoint2.sample() }
+
+            #expect(bearing1Samples.allSatisfy { $0 >= 0 && $0 <= 360 })
+            #expect(bearing2Samples.allSatisfy { $0 >= 0 && $0 <= 360 })
+
+            // Both checkpoints are northeast, so bearings should be in that quadrant
+            let bearing1Mean = bearing1Samples.reduce(0, +) / 100
+            let bearing2Mean = bearing2Samples.reduce(0, +) / 100
+
+            #expect(bearing1Mean > 0 && bearing1Mean < 90)  // Northeast quadrant
+            #expect(bearing2Mean > 0 && bearing2Mean < 90)  // Northeast quadrant
         }
     }
 #endif
