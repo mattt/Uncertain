@@ -35,7 +35,8 @@ import CoreLocation
 let speedLimit: CLLocationSpeed = 25 // 25 m/s ≈ 60 mph or 90 km/h
 
 // ✅ CORRECT: Ask about evidence, not facts
-let uncertainSpeed = Uncertain<CLLocationSpeed>.speed(from: location)
+let uncertainLocation = Uncertain<CLLocation>.from(location)
+let uncertainSpeed = uncertainLocation.speed
 if (uncertainSpeed > speedLimit).probability(exceeds: 0.95) {
     issueCitation()  // Only if 95% confident
 }
@@ -91,13 +92,17 @@ let userLocation = Uncertain<CLLocationCoordinate2D>.coordinate(
 
 let destination = Uncertain<CLLocationCoordinate2D>.coordinate(
     CLLocationCoordinate2D(latitude: 37.7849, longitude: -122.4094),
-    accuracy: 5.0
+    accuracy: 5.0 // ±5 meters
 )
 
-let distance = Uncertain<CLLocationCoordinate2D>.distance(from: userLocation, to: destination)
-
+let distance = userLocation.distance(to: destination)
 if (distance < 100.0).probability(exceeds: 0.9) {
     print("User is likely at the destination")
+} else {
+    let bearing = userLocation.bearing(to: destination)
+    if (bearing >= 45.0 && bearing <= 135.0).probability(exceeds: 0.8) {
+        print("User should head generally eastward")
+    }
 }
 ```
 
