@@ -16,10 +16,13 @@ Programs often treat uncertain data as exact values,
 leading to unreliable decisions:
 
 ```swift
+import CoreLocation
+
+let speedLimit: CLLocationSpeed = 25 // 25 m/s ≈ 60 mph or 90 km/h
+
 // ❌ WRONG: Treats GPS reading as exact truth
-let speed = gps.speed  // 55.2 mph (but GPS has ±5 mph error!)
-if speed > 60.0 {
-    issueSpeedingTicket()  // Oops! False positive due to GPS error
+if location.speed > speedLimit { 
+    issueSpeedingTicket()  // Oops! False positive due to GPS uncertainty
 }
 ```
 
@@ -27,11 +30,14 @@ if speed > 60.0 {
 
 ```swift
 import Uncertain
+import CoreLocation
+
+let speedLimit: CLLocationSpeed = 25 // 25 m/s ≈ 60 mph or 90 km/h
 
 // ✅ CORRECT: Ask about evidence, not facts
-let speed = Uncertain<Double>.gpsSpeed(reading: 55.2, accuracy: 5.0)
-if (speed > 60.0).probability(exceeds: 0.95) {
-    issueSpeedingTicket()  // Only ticket if 95% confident
+let uncertainSpeed = Uncertain<CLLocationSpeed>.speed(from: location)
+if (uncertainSpeed > speedLimit).probability(exceeds: 0.95) {
+    issueCitation()  // Only if 95% confident
 }
 ```
 
@@ -78,20 +84,19 @@ this library provides built-in convenience methods for working with GPS data:
 import Uncertain
 import CoreLocation
 
-let userLocation = Uncertain<CLLocationCoordinate2D>.gpsLocation(
-    coordinate: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
+let userLocation = Uncertain<CLLocationCoordinate2D>.coordinate(
+    CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
     accuracy: 10.0  // ±10 meters
 )
 
-let destination = Uncertain<CLLocationCoordinate2D>.gpsLocation(
-    coordinate: CLLocationCoordinate2D(latitude: 37.7849, longitude: -122.4094),
+let destination = Uncertain<CLLocationCoordinate2D>.coordinate(
+    CLLocationCoordinate2D(latitude: 37.7849, longitude: -122.4094),
     accuracy: 5.0
 )
 
 let distance = Uncertain<CLLocationCoordinate2D>.distance(from: userLocation, to: destination)
-let nearbyEvidence = distance < 100.0  // Within 100 meters
 
-if nearbyEvidence.probability(exceeds: 0.9) {
+if (distance < 100.0).probability(exceeds: 0.9) {
     print("User is likely at the destination")
 }
 ```
@@ -140,10 +145,13 @@ so sampling only occurs when you evaluate evidence.
 ```swift
 let x = Uncertain<Double>.normal(mean: 10.0, standardDeviation: 2.0)
 let y = Uncertain<Double>.normal(mean: 5.0, standardDeviation: 1.0)
-let result = (x + y) * 2.0 - 3.0  // Lazy evaluation tree
 
-let evidence = result > 15.0
-let confident = evidence.probability(exceeds: 0.8)  // Now we sample
+// Expressions are lazily evaluated
+let result = (x + y) * 2.0 - 3.0 // Uncertain<Double>
+let evidence = result > 15.0 // Uncertain<Bool>
+
+// Now we evaluate
+let confident = evidence.probability(exceeds: 0.8)  // Bool
 ```
 
 #### Arithmetic Operations
