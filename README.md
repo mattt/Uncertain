@@ -1,16 +1,15 @@
 # Uncertain\<T\>
 
 A Swift library for uncertainty-aware programming,
-which is especially useful for making reliable decisions with 
+which is especially useful for making reliable decisions with
 noisy, error-prone, or incomplete data.
 
 This library implements the approach described in:
 
 > **James Bornholt, Todd Mytkowicz, and Kathryn S. McKinley**  
-> [*"Uncertain<T>: A First-Order Type for Uncertain Data"*][bornholt2014uncertain]  
-> Architectural Support for Programming Languages and Operating Systems (ASPLOS), 
+> [_"Uncertain<T>: A First-Order Type for Uncertain Data"_][bornholt2014uncertain]  
+> Architectural Support for Programming Languages and Operating Systems (ASPLOS),
 > March 2014.
-
 
 Programs often treat uncertain data as exact values,
 leading to unreliable decisions:
@@ -21,7 +20,7 @@ import CoreLocation
 let speedLimit: CLLocationSpeed = 25 // 25 m/s ≈ 60 mph or 90 km/h
 
 // ❌ WRONG: Treats GPS reading as exact truth
-if location.speed > speedLimit { 
+if location.speed > speedLimit {
     issueSpeedingTicket()  // Oops! False positive due to GPS uncertainty
 }
 ```
@@ -41,6 +40,10 @@ if (uncertainSpeed > speedLimit).probability(exceeds: 0.95) {
     issueCitation()  // Only if 95% confident
 }
 ```
+
+> [!NOTE]  
+> Check out [this blog post](https://nshipster.com/uncertainty/)
+> for more information about probabilistic programming in Swift.
 
 ## Requirements
 
@@ -141,17 +144,17 @@ print("Samples used: \(result.samplesUsed)")
 ```
 
 > [!TIP]
-> The `alpha` and `beta` parameters correspond to the 
-> [Type I error][type-i-error] (false positive rate) and 
-> [Type II error][type-ii-error] (false negative rate), respectively. 
+> The `alpha` and `beta` parameters correspond to the
+> [Type I error][type-i-error] (false positive rate) and
+> [Type II error][type-ii-error] (false negative rate), respectively.
 > Adjust these to control the strictness of your hypothesis test.
 
-The SPRT approach automatically determines sample sizes based on statistical significance, 
+The SPRT approach automatically determines sample sizes based on statistical significance,
 making hypothesis testing both efficient and reliable.
 
 ### Operations
 
-Operations build computation graphs rather than computing immediate values, 
+Operations build computation graphs rather than computing immediate values,
 so sampling only occurs when you evaluate evidence.
 
 ```swift
@@ -244,14 +247,13 @@ This library comes with built-in constructors for various
 >
 > ![Screenshot of Uncertain Distribution Visualizer app](https://github.com/mattt/Uncertain-Distribution-Visualizer/raw/main/Assets/normal-dark.png)
 
-
 #### [Normal][normal-distribution] ([Gaussian][normal-distribution]) Distribution
 
 ```swift
 let normal = Uncertain<Double>.normal(mean: 0.0, standardDeviation: 1.0)
 ```
 
-Best for modeling measurement errors, natural phenomena, and 
+Best for modeling measurement errors, natural phenomena, and
 [central limit theorem][clt] applications.
 
 #### [Uniform Distribution][uniform-distribution]
@@ -260,7 +262,7 @@ Best for modeling measurement errors, natural phenomena, and
 let uniform = Uncertain<Double>.uniform(min: 0.0, max: 1.0)
 ```
 
-All values within the range are equally likely. 
+All values within the range are equally likely.
 Useful for random sampling and [Monte Carlo simulations][monte-carlo].
 
 #### [Exponential Distribution][exponential-distribution]
@@ -269,7 +271,7 @@ Useful for random sampling and [Monte Carlo simulations][monte-carlo].
 let exponential = Uncertain<Double>.exponential(rate: 1.0)
 ```
 
-Models time between events in a [Poisson process][poisson-process]. 
+Models time between events in a [Poisson process][poisson-process].
 Common for modeling waiting times and lifetimes.
 
 #### [Kumaraswamy Distribution][kumaraswamy-distribution]
@@ -278,7 +280,7 @@ Common for modeling waiting times and lifetimes.
 let kumaraswamy = Uncertain<Double>.kumaraswamy(a: 2.0, b: 3.0)
 ```
 
-A continuous distribution on [0,1] with flexible shapes. 
+A continuous distribution on [0,1] with flexible shapes.
 Similar to Beta distribution but with simpler mathematical forms.
 
 #### [Rayleigh Distribution][rayleigh-distribution]
@@ -296,7 +298,7 @@ Commonly used for modeling distances from a center point, such as GPS uncertaint
 let binomial = Uncertain<Int>.binomial(trials: 100, probability: 0.3)
 ```
 
-Models the number of successes in a fixed number of independent trials 
+Models the number of successes in a fixed number of independent trials
 with constant success probability.
 
 #### [Poisson Distribution][poisson-distribution]
@@ -305,7 +307,7 @@ with constant success probability.
 let poisson = Uncertain<Int>.poisson(lambda: 3.5)
 ```
 
-Models the number of events occurring in a fixed time interval 
+Models the number of events occurring in a fixed time interval
 when events occur independently at a constant rate.
 
 #### [Bernoulli Distribution][bernoulli-distribution]
@@ -335,7 +337,7 @@ let observedData = [1.2, 3.4, 2.1, 4.5, 1.8, 2.9]
 let empirical = Uncertain<Double>.empirical(observedData)
 ```
 
-Uses observed data to create a distribution 
+Uses observed data to create a distribution
 by randomly sampling from the provided values.
 
 #### [Mixture Distribution][mixture-distribution]
@@ -438,7 +440,7 @@ let logLikelihood = normal.logLikelihood(45.0, sampleCount: 1000, bandwidth: 1.0
 
 ## License
 
-This project is available under the MIT license. 
+This project is available under the MIT license.
 See the LICENSE file for more info.
 
 [bornholt2014uncertain]: https://www.microsoft.com/en-us/research/publication/uncertaint-a-first-order-type-for-uncertain-data-2/
