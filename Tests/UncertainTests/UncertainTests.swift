@@ -301,6 +301,20 @@ struct UncertainTests {
         #expect(beyondFour < 150)
     }
 
+    @Test("Exponential distribution produces finite positive values")
+    func testExponentialDistribution() {
+        let rate = 2.0
+        let waitingTime = Uncertain<Double>.exponential(rate: rate)
+
+        let samples = (0 ..< 100_000).map { _ in waitingTime.sample() }
+        #expect(samples.allSatisfy { $0.isFinite && $0 > 0 })
+
+        // The standard error of the mean is 0.5 / sqrt(100,000) ≈ 0.0016,
+        // so the tolerance of 0.016 is 10 standard errors (P(failure) ≈ 2e-23).
+        let mean = samples.reduce(0, +) / Double(samples.count)
+        #expect(abs(mean - 1.0 / rate) < 0.016)
+    }
+
     // MARK: - Arithmetic Operations with Uncertainty Propagation
 
     @Test("Uncertainty propagation through arithmetic")

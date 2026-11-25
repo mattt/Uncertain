@@ -544,7 +544,10 @@ extension Uncertain where T == Double {
     /// - Returns: A new uncertain value with an exponential distribution.
     public static func exponential(rate: Double) -> Uncertain<Double> {
         return Uncertain<Double> {
-            -log(Double.random(in: 0.0 ... 1.0)) / rate
+            // Generate exponential using inverse transform sampling
+            // F^(-1)(u) = -ln(1-u) / rate
+            let u = Double.random(in: Double.ulpOfOne ..< 1.0)  // Avoid log(0)
+            return -log(1.0 - u) / rate
         }
     }
 
