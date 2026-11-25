@@ -1372,7 +1372,8 @@ struct UncertainTests {
 
                 let course = Uncertain<CLLocationDirection>.course(
                     from: locNorth,
-                    courseAccuracy: 10.0  // Large uncertainty to test boundary, using: rng
+                    courseAccuracy: 10.0,  // Large uncertainty to test boundary
+                    using: rng
                 )
 
                 let samples = (0 ..< 1000).map { _ in course.sample() }
