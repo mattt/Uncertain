@@ -339,6 +339,55 @@ struct UncertainTests {
         #expect((0 ..< sampleCount).allSatisfy { _ in mixture.sample() == 1.0 })
     }
 
+    @Test("Poisson distribution with zero lambda is always zero")
+    func testPoissonDistributionWithZeroLambda() {
+        let poisson = Uncertain<Int>.poisson(lambda: 0)
+        #expect(poisson.prefix(1000).allSatisfy { $0 == 0 })
+    }
+
+    @Test("Poisson distribution has the correct mean and variance for large lambda", arguments: [1000.0, 10_000.0])
+    func testPoissonDistributionMeanAndVarianceForLargeLambda(lambda: Double) {
+        let n = 10_000
+        let samples = Array(Uncertain<Int>.poisson(lambda: lambda).prefix(n)).map(Double.init)
+        let mean = samples.reduce(0, +) / Double(n)
+        let variance = samples.reduce(0) { acc, x in acc + (x - mean) * (x - mean) } / Double(n - 1)
+
+        // The sum of the samples is Poisson with mean n * lambda,
+        // so a margin of 7 standard errors on the mean fails with probability 2.6e-12.
+        #expect(abs(mean - lambda) < 7 * (lambda / Double(n)).squareRoot())
+        // (n - 1) * variance / lambda is close to chi-squared with n - 1 degrees of freedom,
+        // so a margin of 10% on the variance fails with probability 3.8e-12.
+        #expect(abs(variance / lambda - 1) < 0.1)
+    }
+
+    @Test("Poisson distribution matches the probability mass function for moderate lambda")
+    func testPoissonDistributionGoodnessOfFit() {
+        let lambda = 30.0
+        let n = 100_000
+        // Bins are k <= 14, each k from 15 through 49, and k >= 50.
+        let low = 14
+        let high = 50
+        var observed = [Int](repeating: 0, count: high - low + 1)
+        for k in Uncertain<Int>.poisson(lambda: lambda).prefix(n) {
+            observed[min(max(k, low), high) - low] += 1
+        }
+
+        func pmf(_ k: Int) -> Double {
+            exp(Double(k) * log(lambda) - lambda - lgamma(Double(k) + 1))
+        }
+        var probabilities = (low ... high).map(pmf)
+        probabilities[0] = (0 ... low).map(pmf).reduce(0, +)
+        probabilities[probabilities.count - 1] = 1 - (0 ..< high).map(pmf).reduce(0, +)
+
+        let statistic = zip(observed, probabilities).reduce(0.0) { acc, pair in
+            let expected = Double(n) * pair.1
+            return acc + (Double(pair.0) - expected) * (Double(pair.0) - expected) / expected
+        }
+        // The statistic is close to chi-squared with 36 degrees of freedom,
+        // which is above 130 with probability 1.5e-12.
+        #expect(statistic < 130)
+    }
+
     // MARK: - Arithmetic Operations with Uncertainty Propagation
 
     @Test("Uncertainty propagation through arithmetic")
