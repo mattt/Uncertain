@@ -260,7 +260,8 @@ struct UncertainTests {
         let gpsReading = Uncertain<Double>.normal(mean: 100.0, standardDeviation: 5.0)
 
         // Test uncertainty propagation
-        let samples = gpsReading.prefix(1000)
+        // 10,000 samples put the tolerance on the mean at 10 standard errors
+        let samples = gpsReading.prefix(10_000)
         let count = Array(samples).count
         let mean = samples.reduce(0, +) / Double(count)
         let variance = samples.reduce(0) { acc, x in acc + (x - mean) * (x - mean) } / Double(count)
@@ -1328,7 +1329,8 @@ struct UncertainTests {
                 let location = CLLocation(
                     coordinate: CLLocationCoordinate2D(latitude: 34.0, longitude: -118.0),
                     altitude: 0,
-                    horizontalAccuracy: 8.0,
+                    // 0.5 m/s speed uncertainty, so the speed is clearly in the legal range
+                    horizontalAccuracy: 5.0,
                     verticalAccuracy: 5.0,
                     course: 90.0,
                     speed: 28.0,  // 28 m/s ≈ 63 mph
@@ -1386,7 +1388,8 @@ struct UncertainTests {
                         speed: 15.0,
                         timestamp: Date()
                     ),
-                    courseAccuracy: 8.0
+                    // 5° accuracy puts 98% of headings within tolerance
+                    courseAccuracy: 5.0
                 )
 
                 let desiredHeading = 50.0  // Slightly more east
