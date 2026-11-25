@@ -115,7 +115,7 @@ extension Uncertain where T: Equatable {
         let equalityNode = EqualityNode<T>.comparison(
             left: lhs.node,
             threshold: rhs,
-            comparison: ==
+            comparison: { $0 == $1 }
         )
 
         return Uncertain<Bool>(
@@ -129,7 +129,7 @@ extension Uncertain where T: Equatable {
         let equalityNode = EqualityNode<T>.comparison(
             left: lhs.node,
             threshold: rhs,
-            comparison: !=
+            comparison: { $0 != $1 }
         )
 
         return Uncertain<Bool>(
@@ -160,7 +160,7 @@ extension Uncertain where T: Comparable {
         let comparisonNode = ComparisonNode<T>.comparison(
             left: lhs.node,
             threshold: rhs,
-            comparison: >
+            comparison: { $0 > $1 }
         )
 
         return Uncertain<Bool>(
@@ -174,7 +174,7 @@ extension Uncertain where T: Comparable {
         let comparisonNode = ComparisonNode<T>.comparison(
             left: lhs.node,
             threshold: rhs,
-            comparison: <
+            comparison: { $0 < $1 }
         )
 
         return Uncertain<Bool>(
@@ -188,7 +188,7 @@ extension Uncertain where T: Comparable {
         let comparisonNode = ComparisonNode<T>.comparison(
             left: lhs.node,
             threshold: rhs,
-            comparison: >=
+            comparison: { $0 >= $1 }
         )
 
         return Uncertain<Bool>(
@@ -202,7 +202,7 @@ extension Uncertain where T: Comparable {
         let comparisonNode = ComparisonNode<T>.comparison(
             left: lhs.node,
             threshold: rhs,
-            comparison: <=
+            comparison: { $0 <= $1 }
         )
 
         return Uncertain<Bool>(
@@ -232,7 +232,7 @@ extension Uncertain where T: Numeric {
         let newNode = ComputationNode<T>.binaryOp(
             left: lhs.node,
             right: rhs.node,
-            operation: +
+            operation: { $0 + $1 }
         )
 
         return Uncertain<T>(
@@ -246,7 +246,7 @@ extension Uncertain where T: Numeric {
         let newNode = ComputationNode<T>.binaryOp(
             left: lhs.node,
             right: rhs.node,
-            operation: -
+            operation: { $0 - $1 }
         )
 
         return Uncertain<T>(
@@ -260,7 +260,7 @@ extension Uncertain where T: Numeric {
         let newNode = ComputationNode<T>.binaryOp(
             left: lhs.node,
             right: rhs.node,
-            operation: *
+            operation: { $0 * $1 }
         )
 
         return Uncertain<T>(
@@ -334,7 +334,7 @@ extension Uncertain where T: BinaryFloatingPoint {
         let newNode = ComputationNode<T>.binaryOp(
             left: lhs.node,
             right: rhs.node,
-            operation: /
+            operation: { $0 / $1 }
         )
 
         return Uncertain<T>(
