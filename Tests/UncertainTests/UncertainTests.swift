@@ -285,6 +285,22 @@ struct UncertainTests {
         #expect(abs(mean - 50.0) < 5.0)
     }
 
+    @Test("Normal distribution reaches its tails")
+    func testNormalDistributionTails() {
+        let standardNormal = Uncertain<Double>.normal(mean: 0.0, standardDeviation: 1.0)
+
+        // P(|Z| > 4) ≈ 6.334e-5, so 500,000 samples contain about 32 such values.
+        // Under a Poisson approximation, P(count == 0) ≈ e^-31.7 ≈ 2e-14 and P(count >= 150) < 1e-40.
+        let sampleCount = 500_000
+        var beyondFour = 0
+        for _ in 0 ..< sampleCount where abs(standardNormal.sample()) > 4.0 {
+            beyondFour += 1
+        }
+
+        #expect(beyondFour > 0)
+        #expect(beyondFour < 150)
+    }
+
     // MARK: - Arithmetic Operations with Uncertainty Propagation
 
     @Test("Uncertainty propagation through arithmetic")

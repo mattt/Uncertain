@@ -519,8 +519,8 @@ extension Uncertain where T == Double {
     ) -> Uncertain<Double> {
         return Uncertain<Double> {
             // Box-Muller transform for normal distribution
-            let u1 = Double.random(in: 0.001 ... 0.999)  // Avoid exactly 0 or 1
-            let u2 = Double.random(in: 0.001 ... 0.999)
+            let u1 = Double.random(in: Double.ulpOfOne ..< 1.0)  // Avoid log(0)
+            let u2 = Double.random(in: 0.0 ..< 1.0)
             let z0 = sqrt(-2.0 * log(u1)) * cos(2.0 * Double.pi * u2)
             return mean + standardDeviation * z0
         }
