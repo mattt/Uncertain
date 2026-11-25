@@ -3,6 +3,35 @@ import Testing
 
 @testable import Uncertain
 
+/// A seeded SplitMix64 generator that sampling closures can share,
+/// so that tests of statistical decisions draw the same samples on every run.
+final class SplitMix64: @unchecked Sendable {
+    private var state: UInt64
+    private let lock = NSLock()
+
+    init(seed: UInt64) {
+        state = seed
+    }
+
+    /// Returns a uniformly distributed value in `0..<1`.
+    func nextUnitDouble() -> Double {
+        lock.lock()
+        defer { lock.unlock() }
+        state &+= 0x9E37_79B9_7F4A_7C15
+        var z = state
+        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+        z ^= z >> 31
+        return Double(z >> 11) * 0x1p-53
+    }
+}
+
+/// Returns a Bernoulli distribution with a fixed seed.
+func seededCoin(probability: Double, seed: UInt64) -> Uncertain<Bool> {
+    let generator = SplitMix64(seed: seed)
+    return Uncertain<Bool> { generator.nextUnitDouble() < probability }
+}
+
 @Suite("Paper-Faithful Uncertain<T> Tests")
 struct UncertainTests {
 
@@ -11,7 +40,7 @@ struct UncertainTests {
     @Test("Evidence-based conditionals prevent uncertainty bugs")
     func testEvidenceBasedConditionals() {
         // Temperature sensor with ±2°C accuracy
-        let temperature = Uncertain<Double>.normal(mean: 1.0, standardDeviation: 2.0)
+        let temperature = Uncertain<Double>.normal(mean: 0.5, standardDeviation: 2.0)
         let freezingPoint = 0.0
 
         // Test that we get an Uncertain<Bool> back
@@ -28,7 +57,7 @@ struct UncertainTests {
         #expect(type(of: mediumConfidence) == Bool.self)
         #expect(type(of: lowConfidence) == Bool.self)
 
-        // With temperature mean=1°C and std=2°C, freezing should be:
+        // With temperature mean=0.5°C and std=2°C, P(freezing) ≈ 0.40, so freezing should be:
         // - Very unlikely at 95% confidence (false)
         // - Likely at low confidence (true)
         #expect(highConfidence == false)
@@ -84,8 +113,8 @@ struct UncertainTests {
 
     @Test("Speeding Ticket Example from Paper")
     func testSpeedingTicketExample() {
-        // True speed is 57 mph, but measurement has error
-        let trueSpeed = 57.0
+        // True speed is 56 mph, but measurement has error
+        let trueSpeed = 56.0
         let measurementError = Uncertain<Double>.normal(mean: 0.0, standardDeviation: 2.0)
         let measuredSpeed = Uncertain<Double> { trueSpeed + measurementError.sample() }
 
@@ -97,7 +126,7 @@ struct UncertainTests {
         let standardOfficer = ~speedingEvidence
         let strictOfficer = speedingEvidence.probability(exceeds: 0.2)
 
-        // With true speed 57 mph and 2 mph error, speed limit 60 mph:
+        // With true speed 56 mph and 2 mph error, speed limit 60 mph, P(speeding) ≈ 0.023:
         // - Lenient (95% confident): Should not ticket
         // - Standard (50% confident): Should not ticket
         // - Strict (20% confident): Should not ticket
@@ -183,8 +212,9 @@ struct UncertainTests {
 
     @Test("Hypothesis testing with different confidence levels")
     func testHypothesisTestingConfidenceLevels() {
-        // Create a distribution where we know the true probability
-        let biasedCoin = Uncertain<Bool> { Double.random(in: 0...1) < 0.7 }
+        // Create a distribution where we know the true probability.
+        // A fixed seed keeps the decisions the same on every run.
+        let biasedCoin = seededCoin(probability: 0.7, seed: 1)
 
         // Test different confidence levels
         let highConfidence = biasedCoin.probability(exceeds: 0.6, confidenceLevel: 0.95)
@@ -230,7 +260,8 @@ struct UncertainTests {
         let gpsReading = Uncertain<Double>.normal(mean: 100.0, standardDeviation: 5.0)
 
         // Test uncertainty propagation
-        let samples = gpsReading.prefix(1000)
+        // 10,000 samples put the tolerance on the mean at 10 standard errors
+        let samples = gpsReading.prefix(10_000)
         let count = Array(samples).count
         let mean = samples.reduce(0, +) / Double(count)
         let variance = samples.reduce(0) { acc, x in acc + (x - mean) * (x - mean) } / Double(count)
@@ -485,8 +516,9 @@ struct UncertainTests {
 
     @Test("Improved SPRT with configurable parameters")
     func testImprovedSPRTWithConfigurableParameters() {
-        // Create a distribution with known probability
-        let biasedCoin = Uncertain<Bool> { Double.random(in: 0...1) < 0.7 }
+        // Create a distribution with known probability.
+        // A fixed seed keeps the decisions the same on every run.
+        let biasedCoin = seededCoin(probability: 0.7, seed: 1)
 
         // Test with different batch sizes
         let result1 = biasedCoin.evaluateHypothesis(
@@ -1297,7 +1329,8 @@ struct UncertainTests {
                 let location = CLLocation(
                     coordinate: CLLocationCoordinate2D(latitude: 34.0, longitude: -118.0),
                     altitude: 0,
-                    horizontalAccuracy: 8.0,
+                    // 0.5 m/s speed uncertainty, so the speed is clearly in the legal range
+                    horizontalAccuracy: 5.0,
                     verticalAccuracy: 5.0,
                     course: 90.0,
                     speed: 28.0,  // 28 m/s ≈ 63 mph
@@ -1355,7 +1388,8 @@ struct UncertainTests {
                         speed: 15.0,
                         timestamp: Date()
                     ),
-                    courseAccuracy: 8.0
+                    // 5° accuracy puts 98% of headings within tolerance
+                    courseAccuracy: 5.0
                 )
 
                 let desiredHeading = 50.0  // Slightly more east
