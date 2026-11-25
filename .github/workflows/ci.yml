@@ -8,21 +8,25 @@ on:
 
 jobs:
   test:
-    runs-on: macos-latest
+    runs-on: ${{ matrix.runner }}
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_${{ matrix.xcode }}.app/Contents/Developer
 
     strategy:
       matrix:
-        swift-version:
-          - ^6
+        include:
+          - swift-version: "6.0"
+            runner: macos-15
+            xcode: "16.0"
+          - swift-version: "6.4"
+            runner: xcode-27
+            xcode: "27.0"
 
     name: Build and Test (Swift ${{ matrix.swift-version }})
 
     steps:
     - uses: actions/checkout@v4
-    - uses: swift-actions/setup-swift@v2
-      with:
-        swift-version: ${{ matrix.swift-version }}
     - name: Build
-      run: swift build -v
+      run: xcrun --toolchain XcodeDefault swift build -v
     - name: Run tests
-      run: swift test -v
+      run: xcrun --toolchain XcodeDefault swift test -v
