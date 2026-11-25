@@ -245,7 +245,7 @@ struct UncertainTests {
         #expect(falseResult == false)
 
         // Test edge case near threshold
-        let nearThreshold = Uncertain<Bool> { Double.random(in: 0...1) < 0.51 }
+        let nearThreshold = Uncertain<Bool> { Double.random(in: 0 ... 1) < 0.51 }
         let edgeResult = nearThreshold.probability(exceeds: 0.5)
 
         // Should still make a decision (though might need more samples)
@@ -336,7 +336,7 @@ struct UncertainTests {
         #expect(~alwaysFalse == false)
 
         // Edge case: exactly at threshold
-        let exactlyHalf = Uncertain<Bool> { Double.random(in: 0...1) < 0.5 }
+        let exactlyHalf = Uncertain<Bool> { Double.random(in: 0 ... 1) < 0.5 }
         let result = exactlyHalf.probability(exceeds: 0.5)
         // With true probability ~0.5, the result could be either true or false
         // depending on sampling variation, so we just check it's a boolean
@@ -355,7 +355,7 @@ struct UncertainTests {
         #expect(result == true)
 
         // Test with uncertain case
-        let uncertainCase = Uncertain<Bool> { Double.random(in: 0...1) < 0.51 }
+        let uncertainCase = Uncertain<Bool> { Double.random(in: 0 ... 1) < 0.51 }
         let uncertainResult = uncertainCase.probability(exceeds: 0.5, maxSamples: 1000)
 
         // Should still produce a result (though might use more samples)
@@ -453,7 +453,7 @@ struct UncertainTests {
         let boolConstant = Uncertain<Bool>.point(true)
 
         // These should always return the same value
-        for _ in 0..<10 {
+        for _ in 0 ..< 10 {
             #expect(constantValue.sample() == 42.0)
             #expect(stringConstant.sample() == "hello")
             #expect(boolConstant.sample() == true)
@@ -471,8 +471,8 @@ struct UncertainTests {
     @Test("Logical operators for Uncertain<Bool>")
     func testLogicalOperatorsForUncertainBool() {
         // Create boolean distributions
-        let mostlyTrue = Uncertain<Bool> { Double.random(in: 0...1) < 0.8 }
-        let mostlyFalse = Uncertain<Bool> { Double.random(in: 0...1) < 0.2 }
+        let mostlyTrue = Uncertain<Bool> { Double.random(in: 0 ... 1) < 0.8 }
+        let mostlyFalse = Uncertain<Bool> { Double.random(in: 0 ... 1) < 0.2 }
         let alwaysTrue = Uncertain<Bool>.point(true)
         let alwaysFalse = Uncertain<Bool>.point(false)
 
@@ -650,7 +650,7 @@ struct UncertainTests {
             )
             let uncertain = Uncertain<CLLocation>.from(base)
             // Should sample near the base location
-            let samples = (0..<1000).map { _ in uncertain.sample() }
+            let samples = (0 ..< 1000).map { _ in uncertain.sample() }
             let meanLat = samples.map { $0.coordinate.latitude }.reduce(0, +) / 1000
             let meanLon = samples.map { $0.coordinate.longitude }.reduce(0, +) / 1000
             let meanAlt = samples.map { $0.altitude }.reduce(0, +) / 1000
@@ -668,7 +668,7 @@ struct UncertainTests {
                 verticalAccuracy: 3.0,
                 altitude: 50.0
             )
-            let samples = (0..<1000).map { _ in uncertain.sample() }
+            let samples = (0 ..< 1000).map { _ in uncertain.sample() }
             let meanLat = samples.map { $0.coordinate.latitude }.reduce(0, +) / 1000
             let meanLon = samples.map { $0.coordinate.longitude }.reduce(0, +) / 1000
             let meanAlt = samples.map { $0.altitude }.reduce(0, +) / 1000
@@ -689,8 +689,8 @@ struct UncertainTests {
             )
             let distance = Uncertain<CLLocation>.distance(from: a, to: b)
             let bearing = Uncertain<CLLocation>.bearing(from: a, to: b)
-            let meanDistance = (0..<1000).map { _ in distance.sample() }.reduce(0, +) / 1000
-            let meanBearing = (0..<1000).map { _ in bearing.sample() }.reduce(0, +) / 1000
+            let meanDistance = (0 ..< 1000).map { _ in distance.sample() }.reduce(0, +) / 1000
+            let meanBearing = (0 ..< 1000).map { _ in bearing.sample() }.reduce(0, +) / 1000
             // Should be close to the true distance and bearing
             let trueA = CLLocation(
                 coordinate: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
@@ -718,7 +718,7 @@ struct UncertainTests {
             let a = Uncertain<CLLocationCoordinate2D>.coordinate(coordA, accuracy: 8.0)
             let b = Uncertain<CLLocationCoordinate2D>.coordinate(coordB, accuracy: 8.0)
             let distance = Uncertain<CLLocationCoordinate2D>.distance(from: a, to: b)
-            let meanDistance = (0..<1000).map { _ in distance.sample() }.reduce(0, +) / 1000
+            let meanDistance = (0 ..< 1000).map { _ in distance.sample() }.reduce(0, +) / 1000
             let trueA = CLLocation(
                 coordinate: coordA,
                 altitude: 0,
@@ -750,7 +750,7 @@ struct UncertainTests {
             )
             if #available(iOS 14.0, macOS 11.0, *) {
                 let speed = Uncertain<CLLocationSpeed>.speed(from: loc)
-                let samples = (0..<1000).map { _ in speed.sample() }
+                let samples = (0 ..< 1000).map { _ in speed.sample() }
                 let meanSpeed = samples.reduce(0, +) / 1000
                 #expect(abs(meanSpeed - 15.0) < 1.0)
             }
@@ -769,7 +769,7 @@ struct UncertainTests {
             )
             if #available(iOS 14.0, macOS 11.0, *) {
                 let course = Uncertain<CLLocationDirection>.course(from: loc)
-                let samples = (0..<1000).map { _ in course.sample() }
+                let samples = (0 ..< 1000).map { _ in course.sample() }
                 let meanCourse = samples.reduce(0, +) / 1000
                 #expect(abs(meanCourse - 45.0) < 5.0)
                 #expect(meanCourse >= 0 && meanCourse <= 360)
@@ -800,11 +800,12 @@ struct UncertainTests {
                     minimumSpeedUncertainty: 0.1
                 )
 
-                let conservativeSamples = (0..<1000).map { _ in conservativeSpeed.sample() }
-                let liberalSamples = (0..<1000).map { _ in liberalSpeed.sample() }
+                let conservativeSamples = (0 ..< 1000).map { _ in conservativeSpeed.sample() }
+                let liberalSamples = (0 ..< 1000).map { _ in liberalSpeed.sample() }
 
                 let conservativeStd = sqrt(
-                    conservativeSamples.map { pow($0 - 10.0, 2) }.reduce(0, +) / 1000)
+                    conservativeSamples.map { pow($0 - 10.0, 2) }.reduce(0, +) / 1000
+                )
                 let liberalStd = sqrt(liberalSamples.map { pow($0 - 10.0, 2) }.reduce(0, +) / 1000)
 
                 // Liberal should have higher uncertainty
@@ -834,8 +835,8 @@ struct UncertainTests {
                     courseAccuracy: 15.0
                 )
 
-                let preciseSamples = (0..<1000).map { _ in preciseCourse.sample() }
-                let roughSamples = (0..<1000).map { _ in roughCourse.sample() }
+                let preciseSamples = (0 ..< 1000).map { _ in preciseCourse.sample() }
+                let roughSamples = (0 ..< 1000).map { _ in roughCourse.sample() }
 
                 // Both should be centered around 90 degrees
                 let preciseMean = preciseSamples.reduce(0, +) / 1000
@@ -882,11 +883,12 @@ struct UncertainTests {
 
                 // Test that the library uses the location's built-in courseAccuracy
                 let accurateCourse = Uncertain<CLLocationDirection>.course(
-                    from: locWithAccurateCourse)
+                    from: locWithAccurateCourse
+                )
                 let roughCourse = Uncertain<CLLocationDirection>.course(from: locWithRoughCourse)
 
-                let accurateSamples = (0..<1000).map { _ in accurateCourse.sample() }
-                let roughSamples = (0..<1000).map { _ in roughCourse.sample() }
+                let accurateSamples = (0 ..< 1000).map { _ in accurateCourse.sample() }
+                let roughSamples = (0 ..< 1000).map { _ in roughCourse.sample() }
 
                 // Both should be centered around 180 degrees
                 let accurateMean = accurateSamples.reduce(0, +) / 1000
@@ -915,7 +917,8 @@ struct UncertainTests {
                 )
 
                 let invalidCourse = Uncertain<CLLocationDirection>.course(
-                    from: locWithInvalidCourse)
+                    from: locWithInvalidCourse
+                )
                 let invalidSample = invalidCourse.sample()
                 #expect(invalidSample == -1.0)  // Should return invalid course unchanged
 
@@ -933,7 +936,8 @@ struct UncertainTests {
                 )
 
                 let invalidAccuracyCourse = Uncertain<CLLocationDirection>.course(
-                    from: locWithInvalidAccuracy)
+                    from: locWithInvalidAccuracy
+                )
                 let invalidAccuracySample = invalidAccuracyCourse.sample()
                 #expect(invalidAccuracySample == 90.0)  // Should return base course unchanged
             }
@@ -976,10 +980,12 @@ struct UncertainTests {
 
             // Test the improved coordinate method
             let uncertainCoord = Uncertain<CLLocationCoordinate2D>.coordinate(
-                baseCoord, accuracy: accuracy)
+                baseCoord,
+                accuracy: accuracy
+            )
 
             // Sample many times to check distribution
-            let samples = (0..<1000).map { _ in uncertainCoord.sample() }
+            let samples = (0 ..< 1000).map { _ in uncertainCoord.sample() }
             let latOffsets = samples.map { $0.latitude - baseCoord.latitude }
             let lonOffsets = samples.map { $0.longitude - baseCoord.longitude }
 
@@ -1011,7 +1017,7 @@ struct UncertainTests {
             )
 
             let uncertainLoc = Uncertain<CLLocation>.from(baseLoc)
-            let samples = (0..<1000).map { _ in uncertainLoc.sample() }
+            let samples = (0 ..< 1000).map { _ in uncertainLoc.sample() }
             let altitudes = samples.map { $0.altitude }
 
             // Mean should be close to base altitude
@@ -1043,8 +1049,8 @@ struct UncertainTests {
             let bearing = Uncertain<CLLocation>.bearing(from: locA, to: locB)
 
             // Test that uncertainty propagates correctly
-            let distanceSamples = (0..<1000).map { _ in distance.sample() }
-            let bearingSamples = (0..<1000).map { _ in bearing.sample() }
+            let distanceSamples = (0 ..< 1000).map { _ in distance.sample() }
+            let bearingSamples = (0 ..< 1000).map { _ in bearing.sample() }
 
             // Distance should be around 1.5km (rough estimate)
             let meanDistance = distanceSamples.reduce(0, +) / 1000
@@ -1053,7 +1059,8 @@ struct UncertainTests {
 
             // Should have reasonable uncertainty in distance
             let distanceStd = sqrt(
-                distanceSamples.map { pow($0 - meanDistance, 2) }.reduce(0, +) / 1000)
+                distanceSamples.map { pow($0 - meanDistance, 2) }.reduce(0, +) / 1000
+            )
             #expect(distanceStd > 5.0)  // Some uncertainty
             #expect(distanceStd < 50.0)  // Not too much
 
@@ -1082,7 +1089,7 @@ struct UncertainTests {
                     courseAccuracy: 10.0  // Large uncertainty to test boundary
                 )
 
-                let samples = (0..<1000).map { _ in course.sample() }
+                let samples = (0 ..< 1000).map { _ in course.sample() }
 
                 // All samples should be in valid range [0, 360)
                 #expect(samples.allSatisfy { $0 >= 0 && $0 < 360 })
@@ -1099,7 +1106,7 @@ struct UncertainTests {
                 )
 
                 let exactCourse = Uncertain<CLLocationDirection>.course(from: locExact)
-                let exactSamples = (0..<100).map { _ in exactCourse.sample() }
+                let exactSamples = (0 ..< 100).map { _ in exactCourse.sample() }
 
                 #expect(exactSamples.allSatisfy { $0 >= 0 && $0 < 360 })
             }
@@ -1134,16 +1141,16 @@ struct UncertainTests {
 
             // Compare means to ensure equivalence
             let instanceDist1Mean =
-                (0..<100).map { _ in instanceDistance1.sample() }.reduce(0, +) / 100
+                (0 ..< 100).map { _ in instanceDistance1.sample() }.reduce(0, +) / 100
             let instanceDist2Mean =
-                (0..<100).map { _ in instanceDistance2.sample() }.reduce(0, +) / 100
-            let staticDistMean = (0..<100).map { _ in staticDistance.sample() }.reduce(0, +) / 100
+                (0 ..< 100).map { _ in instanceDistance2.sample() }.reduce(0, +) / 100
+            let staticDistMean = (0 ..< 100).map { _ in staticDistance.sample() }.reduce(0, +) / 100
 
             let instanceBear1Mean =
-                (0..<100).map { _ in instanceBearing1.sample() }.reduce(0, +) / 100
+                (0 ..< 100).map { _ in instanceBearing1.sample() }.reduce(0, +) / 100
             let instanceBear2Mean =
-                (0..<100).map { _ in instanceBearing2.sample() }.reduce(0, +) / 100
-            let staticBearMean = (0..<100).map { _ in staticBearing.sample() }.reduce(0, +) / 100
+                (0 ..< 100).map { _ in instanceBearing2.sample() }.reduce(0, +) / 100
+            let staticBearMean = (0 ..< 100).map { _ in staticBearing.sample() }.reduce(0, +) / 100
 
             // Instance and static methods should be equivalent
             #expect(abs(instanceDist1Mean - staticDistMean) < 50)
@@ -1174,7 +1181,9 @@ struct UncertainTests {
             let instanceDistance1 = coordA.distance(to: coordB)
             let instanceDistance2 = coordA.distance(to: specificCoord)
             let staticDistance = Uncertain<CLLocationCoordinate2D>.distance(
-                from: coordA, to: coordB)
+                from: coordA,
+                to: coordB
+            )
 
             // Test bearing methods
             let instanceBearing1 = coordA.bearing(to: coordB)
@@ -1183,16 +1192,16 @@ struct UncertainTests {
 
             // Sample to check equivalence
             let instanceDist1Mean =
-                (0..<100).map { _ in instanceDistance1.sample() }.reduce(0, +) / 100
+                (0 ..< 100).map { _ in instanceDistance1.sample() }.reduce(0, +) / 100
             let instanceDist2Mean =
-                (0..<100).map { _ in instanceDistance2.sample() }.reduce(0, +) / 100
-            let staticDistMean = (0..<100).map { _ in staticDistance.sample() }.reduce(0, +) / 100
+                (0 ..< 100).map { _ in instanceDistance2.sample() }.reduce(0, +) / 100
+            let staticDistMean = (0 ..< 100).map { _ in staticDistance.sample() }.reduce(0, +) / 100
 
             let instanceBear1Mean =
-                (0..<100).map { _ in instanceBearing1.sample() }.reduce(0, +) / 100
+                (0 ..< 100).map { _ in instanceBearing1.sample() }.reduce(0, +) / 100
             let instanceBear2Mean =
-                (0..<100).map { _ in instanceBearing2.sample() }.reduce(0, +) / 100
-            let staticBearMean = (0..<100).map { _ in staticBearing.sample() }.reduce(0, +) / 100
+                (0 ..< 100).map { _ in instanceBearing2.sample() }.reduce(0, +) / 100
+            let staticBearMean = (0 ..< 100).map { _ in staticBearing.sample() }.reduce(0, +) / 100
 
             // Should be equivalent to static methods
             #expect(abs(instanceDist1Mean - staticDistMean) < 100)
@@ -1265,8 +1274,8 @@ struct UncertainTests {
                 let diff1 = uncertainDirection.angularDifference(to: targetDirection1)
                 let diff2 = uncertainDirection.angularDifference(to: targetDirection2)
 
-                let diff1Mean = (0..<100).map { _ in diff1.sample() }.reduce(0, +) / 100
-                let diff2Mean = (0..<100).map { _ in diff2.sample() }.reduce(0, +) / 100
+                let diff1Mean = (0 ..< 100).map { _ in diff1.sample() }.reduce(0, +) / 100
+                let diff2Mean = (0 ..< 100).map { _ in diff2.sample() }.reduce(0, +) / 100
 
                 // Expected differences: -45°, +45°, +180°
                 #expect(abs(diff1Mean - (-45.0)) < 10)
@@ -1287,7 +1296,7 @@ struct UncertainTests {
 
                 let uncertainDiff = uncertainDirection.angularDifference(to: targetUncertain)
                 let uncertainDiffMean =
-                    (0..<100).map { _ in uncertainDiff.sample() }.reduce(0, +) / 100
+                    (0 ..< 100).map { _ in uncertainDiff.sample() }.reduce(0, +) / 100
 
                 // Should be approximately -45° (90° - 45°)
                 #expect(abs(uncertainDiffMean - (-45.0)) < 15)
@@ -1315,7 +1324,7 @@ struct UncertainTests {
 
                 let boundaryDiff = northDirection.angularDifference(to: 350.0)
                 let boundaryDiffMean =
-                    (0..<100).map { _ in boundaryDiff.sample() }.reduce(0, +) / 100
+                    (0 ..< 100).map { _ in boundaryDiff.sample() }.reduce(0, +) / 100
 
                 // 0° to 350° should be -10° (shortest path)
                 #expect(abs(boundaryDiffMean - (-10.0)) < 5)
@@ -1405,7 +1414,7 @@ struct UncertainTests {
                 // Test course correction needed
                 let courseCorrection = currentHeading.angularDifference(to: desiredHeading)
                 let correctionMean =
-                    (0..<200).map { _ in courseCorrection.sample() }.reduce(0, +) / 200
+                    (0 ..< 200).map { _ in courseCorrection.sample() }.reduce(0, +) / 200
 
                 // Should need about +5° correction (50° - 45°)
                 #expect(abs(correctionMean - 5.0) < 3.0)
@@ -1461,8 +1470,8 @@ struct UncertainTests {
             #expect(checkpoint2Reachable == true)
 
             // Test bearing calculations are reasonable
-            let bearing1Samples = (0..<100).map { _ in bearingToCheckpoint1.sample() }
-            let bearing2Samples = (0..<100).map { _ in bearingToCheckpoint2.sample() }
+            let bearing1Samples = (0 ..< 100).map { _ in bearingToCheckpoint1.sample() }
+            let bearing2Samples = (0 ..< 100).map { _ in bearingToCheckpoint2.sample() }
 
             #expect(bearing1Samples.allSatisfy { $0 >= 0 && $0 <= 360 })
             #expect(bearing2Samples.allSatisfy { $0 >= 0 && $0 <= 360 })
