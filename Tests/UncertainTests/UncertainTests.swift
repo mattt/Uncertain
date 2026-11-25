@@ -3,35 +3,6 @@ import Testing
 
 @testable import Uncertain
 
-/// A seeded SplitMix64 generator that sampling closures can share,
-/// so that tests of statistical decisions draw the same samples on every run.
-final class SplitMix64: @unchecked Sendable {
-    private var state: UInt64
-    private let lock = NSLock()
-
-    init(seed: UInt64) {
-        state = seed
-    }
-
-    /// Returns a uniformly distributed value in `0..<1`.
-    func nextUnitDouble() -> Double {
-        lock.lock()
-        defer { lock.unlock() }
-        state &+= 0x9E37_79B9_7F4A_7C15
-        var z = state
-        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
-        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
-        z ^= z >> 31
-        return Double(z >> 11) * 0x1p-53
-    }
-}
-
-/// Returns a Bernoulli distribution with a fixed seed.
-func seededCoin(probability: Double, seed: UInt64) -> Uncertain<Bool> {
-    let generator = SplitMix64(seed: seed)
-    return Uncertain<Bool> { generator.nextUnitDouble() < probability }
-}
-
 @Suite("Paper-Faithful Uncertain<T> Tests")
 struct UncertainTests {
 
@@ -39,8 +10,11 @@ struct UncertainTests {
 
     @Test("Evidence-based conditionals prevent uncertainty bugs")
     func testEvidenceBasedConditionals() {
+        // A fixed seed draws the same samples on every run
+        let rng = SplitMix64(seed: 1)
+
         // Temperature sensor with ±2°C accuracy
-        let temperature = Uncertain<Double>.normal(mean: 0.5, standardDeviation: 2.0)
+        let temperature = Uncertain<Double>.normal(mean: 0.5, standardDeviation: 2.0, using: rng)
         let freezingPoint = 0.0
 
         // Test that we get an Uncertain<Bool> back
@@ -66,8 +40,11 @@ struct UncertainTests {
 
     @Test("Implicit conditionals using ~ operator")
     func testImplicitConditionals() {
+        // A fixed seed draws the same samples on every run
+        let rng = SplitMix64(seed: 1)
+
         // Speed measurement with uncertainty
-        let speed = Uncertain<Double>.normal(mean: 65.0, standardDeviation: 3.0)
+        let speed = Uncertain<Double>.normal(mean: 65.0, standardDeviation: 3.0, using: rng)
         let speedLimit = 60.0
 
         let speedingEvidence = speed > speedLimit
@@ -85,9 +62,12 @@ struct UncertainTests {
 
     @Test("GPS Walking Speed Example from Paper")
     func testGPSWalkingSpeedExample() {
+        // A fixed seed draws the same samples on every run
+        let rng = SplitMix64(seed: 1)
+
         // GPS readings with 4-meter accuracy (from the paper)
-        let location1 = Uncertain<Double>.normal(mean: 0.0, standardDeviation: 4.0)
-        let location2 = Uncertain<Double>.normal(mean: 100.0, standardDeviation: 4.0)
+        let location1 = Uncertain<Double>.normal(mean: 0.0, standardDeviation: 4.0, using: rng)
+        let location2 = Uncertain<Double>.normal(mean: 100.0, standardDeviation: 4.0, using: rng)
 
         // Calculate walking speed with uncertainty propagation
         let distance = location2 - location1
@@ -113,9 +93,12 @@ struct UncertainTests {
 
     @Test("Speeding Ticket Example from Paper")
     func testSpeedingTicketExample() {
+        // A fixed seed draws the same samples on every run
+        let rng = SplitMix64(seed: 1)
+
         // True speed is 56 mph, but measurement has error
         let trueSpeed = 56.0
-        let measurementError = Uncertain<Double>.normal(mean: 0.0, standardDeviation: 2.0)
+        let measurementError = Uncertain<Double>.normal(mean: 0.0, standardDeviation: 2.0, using: rng)
         let measuredSpeed = Uncertain<Double> { trueSpeed + measurementError.sample() }
 
         let speedLimit = 60.0
@@ -137,7 +120,10 @@ struct UncertainTests {
 
     @Test("Comparison operators return Uncertain<Bool>")
     func testComparisonOperatorsReturnUncertainBool() {
-        let value = Uncertain<Double>.normal(mean: 10.0, standardDeviation: 2.0)
+        // A fixed seed draws the same samples on every run
+        let rng = SplitMix64(seed: 1)
+
+        let value = Uncertain<Double>.normal(mean: 10.0, standardDeviation: 2.0, using: rng)
         let threshold = 12.0
 
         let gtEvidence = value > threshold
@@ -166,8 +152,11 @@ struct UncertainTests {
 
     @Test("Computation graph builds correctly")
     func testComputationGraphBuilding() {
-        let x = Uncertain<Double>.normal(mean: 5.0, standardDeviation: 1.0)
-        let y = Uncertain<Double>.normal(mean: 3.0, standardDeviation: 1.0)
+        // A fixed seed draws the same samples on every run
+        let rng = SplitMix64(seed: 1)
+
+        let x = Uncertain<Double>.normal(mean: 5.0, standardDeviation: 1.0, using: rng)
+        let y = Uncertain<Double>.normal(mean: 3.0, standardDeviation: 1.0, using: rng)
 
         // Build computation graph
         let sum = x + y
@@ -214,7 +203,8 @@ struct UncertainTests {
     func testHypothesisTestingConfidenceLevels() {
         // Create a distribution where we know the true probability.
         // A fixed seed keeps the decisions the same on every run.
-        let biasedCoin = seededCoin(probability: 0.7, seed: 1)
+        let rng = SplitMix64(seed: 1)
+        let biasedCoin = Uncertain<Double>.bernoulli(probability: 0.7, using: rng)
 
         // Test different confidence levels
         let highConfidence = biasedCoin.probability(exceeds: 0.6, confidenceLevel: 0.95)
@@ -233,6 +223,9 @@ struct UncertainTests {
 
     @Test("SPRT-inspired hypothesis testing efficiency")
     func testHypothesisTestingEfficiency() {
+        // A fixed seed draws the same samples on every run
+        let rng = SplitMix64(seed: 1)
+
         // Create clear evidence case
         let certainTrue = Uncertain<Bool> { true }
         let certainFalse = Uncertain<Bool> { false }
@@ -245,7 +238,7 @@ struct UncertainTests {
         #expect(falseResult == false)
 
         // Test edge case near threshold
-        let nearThreshold = Uncertain<Bool> { Double.random(in: 0 ... 1) < 0.51 }
+        let nearThreshold = Uncertain<Double>.bernoulli(probability: 0.51, using: rng)
         let edgeResult = nearThreshold.probability(exceeds: 0.5)
 
         // Should still make a decision (though might need more samples)
@@ -256,8 +249,11 @@ struct UncertainTests {
 
     @Test("Normal distribution for uncertainty modeling")
     func testNormalDistributionForUncertainty() {
+        // A fixed seed draws the same samples on every run
+        let rng = SplitMix64(seed: 1)
+
         // GPS accuracy example
-        let gpsReading = Uncertain<Double>.normal(mean: 100.0, standardDeviation: 5.0)
+        let gpsReading = Uncertain<Double>.normal(mean: 100.0, standardDeviation: 5.0, using: rng)
 
         // Test uncertainty propagation
         // 10,000 samples put the tolerance on the mean at 10 standard errors
@@ -273,7 +269,10 @@ struct UncertainTests {
 
     @Test("Uniform distribution for modeling ranges")
     func testUniformDistributionForRanges() {
-        let sensorRange = Uncertain<Double>.uniform(min: 0.0, max: 100.0)
+        // A fixed seed draws the same samples on every run
+        let rng = SplitMix64(seed: 1)
+
+        let sensorRange = Uncertain<Double>.uniform(min: 0.0, max: 100.0, using: rng)
         let samples = sensorRange.prefix(1000)
 
         // All samples should be in range
@@ -287,7 +286,10 @@ struct UncertainTests {
 
     @Test("Normal distribution reaches its tails")
     func testNormalDistributionTails() {
-        let standardNormal = Uncertain<Double>.normal(mean: 0.0, standardDeviation: 1.0)
+        // A fixed seed draws the same samples on every run
+        let rng = SplitMix64(seed: 1)
+
+        let standardNormal = Uncertain<Double>.normal(mean: 0.0, standardDeviation: 1.0, using: rng)
 
         // P(|Z| > 4) ≈ 6.334e-5, so 500,000 samples contain about 32 such values.
         // Under a Poisson approximation, P(count == 0) ≈ e^-31.7 ≈ 2e-14 and P(count >= 150) < 1e-40.
@@ -303,8 +305,11 @@ struct UncertainTests {
 
     @Test("Exponential distribution produces finite positive values")
     func testExponentialDistribution() {
+        // A fixed seed draws the same samples on every run
+        let rng = SplitMix64(seed: 1)
+
         let rate = 2.0
-        let waitingTime = Uncertain<Double>.exponential(rate: rate)
+        let waitingTime = Uncertain<Double>.exponential(rate: rate, using: rng)
 
         let samples = (0 ..< 100_000).map { _ in waitingTime.sample() }
         #expect(samples.allSatisfy { $0.isFinite && $0 > 0 })
@@ -392,8 +397,11 @@ struct UncertainTests {
 
     @Test("Uncertainty propagation through arithmetic")
     func testUncertaintyPropagationThroughArithmetic() {
-        let measurement1 = Uncertain<Double>.normal(mean: 10.0, standardDeviation: 1.0)
-        let measurement2 = Uncertain<Double>.normal(mean: 20.0, standardDeviation: 2.0)
+        // A fixed seed draws the same samples on every run
+        let rng = SplitMix64(seed: 1)
+
+        let measurement1 = Uncertain<Double>.normal(mean: 10.0, standardDeviation: 1.0, using: rng)
+        let measurement2 = Uncertain<Double>.normal(mean: 20.0, standardDeviation: 2.0, using: rng)
 
         let sum = measurement1 + measurement2
         let difference = measurement2 - measurement1
@@ -426,6 +434,9 @@ struct UncertainTests {
 
     @Test("Handle edge cases in evidence evaluation")
     func testEdgeCasesInEvidenceEvaluation() {
+        // A fixed seed draws the same samples on every run
+        let rng = SplitMix64(seed: 1)
+
         // Always true case
         let alwaysTrue = Uncertain<Bool> { true }
         #expect(alwaysTrue.probability(exceeds: 0.5) == true)
@@ -439,7 +450,7 @@ struct UncertainTests {
         #expect(~alwaysFalse == false)
 
         // Edge case: exactly at threshold
-        let exactlyHalf = Uncertain<Bool> { Double.random(in: 0 ... 1) < 0.5 }
+        let exactlyHalf = Uncertain<Double>.bernoulli(probability: 0.5, using: rng)
         let result = exactlyHalf.probability(exceeds: 0.5)
         // With true probability ~0.5, the result could be either true or false
         // depending on sampling variation, so we just check it's a boolean
@@ -450,6 +461,9 @@ struct UncertainTests {
 
     @Test("Efficient sampling with hypothesis testing")
     func testEfficientSamplingWithHypothesisTesting() {
+        // A fixed seed draws the same samples on every run
+        let rng = SplitMix64(seed: 1)
+
         // Test that clear cases are decided quickly
         let clearCase = Uncertain<Bool> { true }
 
@@ -458,7 +472,7 @@ struct UncertainTests {
         #expect(result == true)
 
         // Test with uncertain case
-        let uncertainCase = Uncertain<Bool> { Double.random(in: 0 ... 1) < 0.51 }
+        let uncertainCase = Uncertain<Double>.bernoulli(probability: 0.51, using: rng)
         let uncertainResult = uncertainCase.probability(exceeds: 0.5, maxSamples: 1000)
 
         // Should still produce a result (though might use more samples)
@@ -469,9 +483,12 @@ struct UncertainTests {
 
     @Test("Complete GPS example from paper")
     func testCompleteGPSExample() {
+        // A fixed seed draws the same samples on every run
+        let rng = SplitMix64(seed: 1)
+
         // Simulate the complete GPS walking scenario from the paper
-        let startLocation = Uncertain<Double>.normal(mean: 0.0, standardDeviation: 4.0)
-        let endLocation = Uncertain<Double>.normal(mean: 100.0, standardDeviation: 4.0)
+        let startLocation = Uncertain<Double>.normal(mean: 0.0, standardDeviation: 4.0, using: rng)
+        let endLocation = Uncertain<Double>.normal(mean: 100.0, standardDeviation: 4.0, using: rng)
 
         let distance = endLocation - startLocation
         let time = 30.0  // 30 seconds
@@ -498,8 +515,11 @@ struct UncertainTests {
 
     @Test("Uncertainty bug prevention")
     func testUncertaintyBugPrevention() {
+        // A fixed seed draws the same samples on every run
+        let rng = SplitMix64(seed: 1)
+
         // Demonstrate how evidence-based conditionals prevent bugs
-        let sensorReading = Uncertain<Double>.normal(mean: 50.0, standardDeviation: 10.0)
+        let sensorReading = Uncertain<Double>.normal(mean: 50.0, standardDeviation: 10.0, using: rng)
         let threshold = 55.0
 
         // OLD WAY (uncertainty bug): single sample
@@ -523,8 +543,11 @@ struct UncertainTests {
 
     @Test("Shared variable sampling with memoization")
     func testSharedVariableSampling() {
+        // A fixed seed draws the same samples on every run
+        let rng = SplitMix64(seed: 1)
+
         // This test ensures that shared variables sample consistently within a single evaluation
-        let x = Uncertain<Double>.normal(mean: 5.0, standardDeviation: 1.0)
+        let x = Uncertain<Double>.normal(mean: 5.0, standardDeviation: 1.0, using: rng)
 
         // The paper states: "let b = a + a" should use the same sample of 'a' twice
         let doubleX = x + x
@@ -550,6 +573,9 @@ struct UncertainTests {
 
     @Test("Point-mass constructor for constants")
     func testPointMassConstructor() {
+        // A fixed seed draws the same samples on every run
+        let rng = SplitMix64(seed: 1)
+
         // Test the paper's point-mass constructor
         let constantValue = Uncertain<Double>.point(42.0)
         let stringConstant = Uncertain<String>.point("hello")
@@ -563,7 +589,7 @@ struct UncertainTests {
         }
 
         // Test that point-mass values work in arithmetic
-        let x = Uncertain<Double>.normal(mean: 5.0, standardDeviation: 1.0)
+        let x = Uncertain<Double>.normal(mean: 5.0, standardDeviation: 1.0, using: rng)
         let constantTen = Uncertain<Double>.point(10.0)
         let sum = x + constantTen
 
@@ -573,9 +599,12 @@ struct UncertainTests {
 
     @Test("Logical operators for Uncertain<Bool>")
     func testLogicalOperatorsForUncertainBool() {
+        // A fixed seed draws the same samples on every run
+        let rng = SplitMix64(seed: 1)
+
         // Create boolean distributions
-        let mostlyTrue = Uncertain<Bool> { Double.random(in: 0 ... 1) < 0.8 }
-        let mostlyFalse = Uncertain<Bool> { Double.random(in: 0 ... 1) < 0.2 }
+        let mostlyTrue = Uncertain<Double>.bernoulli(probability: 0.8, using: rng)
+        let mostlyFalse = Uncertain<Double>.bernoulli(probability: 0.2, using: rng)
         let alwaysTrue = Uncertain<Bool>.point(true)
         let alwaysFalse = Uncertain<Bool>.point(false)
 
@@ -621,7 +650,8 @@ struct UncertainTests {
     func testImprovedSPRTWithConfigurableParameters() {
         // Create a distribution with known probability.
         // A fixed seed keeps the decisions the same on every run.
-        let biasedCoin = seededCoin(probability: 0.7, seed: 1)
+        let rng = SplitMix64(seed: 1)
+        let biasedCoin = Uncertain<Double>.bernoulli(probability: 0.7, using: rng)
 
         // Test with different batch sizes
         let result1 = biasedCoin.evaluateHypothesis(
@@ -700,16 +730,14 @@ struct UncertainTests {
     //
     // | Case                  | Type I rate (alpha) | Type II rate (beta) |
     // | --------------------- | ------------------- | ------------------- |
-    // | confidenceLevel 0.90  | 0.0715 (0.10)       | 0.0655 (0.10)       |
-    // | confidenceLevel 0.95  | 0.0350 (0.05)       | 0.0335 (0.05)       |
-    // | alpha 0.01, beta 0.10 | 0.0105 (0.01)       | 0.0695 (0.10)       |
+    // | confidenceLevel 0.90  | 0.0705 (0.10)       | 0.0800 (0.10)       |
+    // | confidenceLevel 0.95  | 0.0335 (0.05)       | 0.0315 (0.05)       |
+    // | alpha 0.01, beta 0.10 | 0.0060 (0.01)       | 0.0845 (0.10)       |
     //
-    // All rates but one are below their bounds, by 0.015 to 0.035,
+    // All rates are below their bounds, by 0.004 to 0.030,
     // because each batch of 10 samples overshoots the SPRT boundary,
     // which makes the test more conservative than Wald's approximation.
-    // The type I rate for alpha 0.01 is 0.0005 above alpha;
-    // it is still below Wald's bound of alpha / (1 - beta) ≈ 0.0111.
-    // The fallback decision at maxSamples occurred in 2 of the 12,000 runs.
+    // No run reached the fallback decision at maxSamples.
     @Test(
         "SPRT error rates stay near alpha and beta",
         arguments: [
@@ -727,8 +755,14 @@ struct UncertainTests {
         var falseNegatives = 0
         for run in 0 ..< runs {
             // Each run uses its own seed, and the two hypotheses use separate seed ranges.
-            let atNull = seededCoin(probability: threshold - epsilon, seed: UInt64(run))
-            let atAlternative = seededCoin(probability: threshold + epsilon, seed: UInt64(runs + run))
+            let atNull = Uncertain<Double>.bernoulli(
+                probability: threshold - epsilon,
+                using: SplitMix64(seed: UInt64(run))
+            )
+            let atAlternative = Uncertain<Double>.bernoulli(
+                probability: threshold + epsilon,
+                using: SplitMix64(seed: UInt64(runs + run))
+            )
 
             if atNull.evaluateHypothesis(
                 threshold: threshold,
@@ -770,9 +804,12 @@ struct UncertainTests {
 
     @Test("Complex shared variable expressions")
     func testComplexSharedVariableExpressions() {
+        // A fixed seed draws the same samples on every run
+        let rng = SplitMix64(seed: 1)
+
         // Test complex expressions with shared variables
-        let a = Uncertain<Double>.normal(mean: 1.0, standardDeviation: 0.1)
-        let b = Uncertain<Double>.normal(mean: 2.0, standardDeviation: 0.1)
+        let a = Uncertain<Double>.normal(mean: 1.0, standardDeviation: 0.1, using: rng)
+        let b = Uncertain<Double>.normal(mean: 2.0, standardDeviation: 0.1, using: rng)
 
         // Test that (a + b) * (a + b) behaves like (a + b)²
         let sumAB = a + b
@@ -797,8 +834,11 @@ struct UncertainTests {
 
     @Test("Logical operators preserve shared variable semantics")
     func testLogicalOperatorsPreserveSharedVariableSemantics() {
+        // A fixed seed draws the same samples on every run
+        let rng = SplitMix64(seed: 1)
+
         // Test that logical operators properly handle shared variables
-        let x = Uncertain<Double>.normal(mean: 5.0, standardDeviation: 1.0)
+        let x = Uncertain<Double>.normal(mean: 5.0, standardDeviation: 1.0, using: rng)
         let threshold = 5.0
 
         let above = x > threshold
@@ -835,6 +875,9 @@ struct UncertainTests {
     struct UncertainCoreLocationTests {
         @Test("Uncertain<CLLocation> from CLLocation models uncertainty")
         func testUncertainCLLocationFrom() {
+            // A fixed seed draws the same samples on every run
+            let rng = SplitMix64(seed: 1)
+
             let base = CLLocation(
                 coordinate: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
                 altitude: 10.0,
@@ -842,7 +885,7 @@ struct UncertainTests {
                 verticalAccuracy: 2.0,
                 timestamp: Date()
             )
-            let uncertain = Uncertain<CLLocation>.from(base)
+            let uncertain = Uncertain<CLLocation>.from(base, using: rng)
             // Should sample near the base location
             let samples = (0 ..< 1000).map { _ in uncertain.sample() }
             let meanLat = samples.map { $0.coordinate.latitude }.reduce(0, +) / 1000
@@ -855,12 +898,16 @@ struct UncertainTests {
 
         @Test("Uncertain<CLLocation> .location constructor")
         func testUncertainCLLocationLocation() {
+            // A fixed seed draws the same samples on every run
+            let rng = SplitMix64(seed: 1)
+
             let coord = CLLocationCoordinate2D(latitude: 40.0, longitude: -74.0)
             let uncertain = Uncertain<CLLocation>.location(
                 coordinate: coord,
                 horizontalAccuracy: 10.0,
                 verticalAccuracy: 3.0,
-                altitude: 50.0
+                altitude: 50.0,
+                using: rng
             )
             let samples = (0 ..< 1000).map { _ in uncertain.sample() }
             let meanLat = samples.map { $0.coordinate.latitude }.reduce(0, +) / 1000
@@ -873,13 +920,18 @@ struct UncertainTests {
 
         @Test("Uncertain<CLLocation> distance and bearing")
         func testUncertainCLLocationDistanceAndBearing() {
+            // A fixed seed draws the same samples on every run
+            let rng = SplitMix64(seed: 1)
+
             let a = Uncertain<CLLocation>.location(
                 coordinate: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
-                horizontalAccuracy: 5.0
+                horizontalAccuracy: 5.0,
+                using: rng
             )
             let b = Uncertain<CLLocation>.location(
                 coordinate: CLLocationCoordinate2D(latitude: 37.7750, longitude: -122.4184),
-                horizontalAccuracy: 5.0
+                horizontalAccuracy: 5.0,
+                using: rng
             )
             let distance = Uncertain<CLLocation>.distance(from: a, to: b)
             let bearing = Uncertain<CLLocation>.bearing(from: a, to: b)
@@ -907,10 +959,13 @@ struct UncertainTests {
 
         @Test("Uncertain<CLLocationCoordinate2D> coordinate and distance")
         func testUncertainCLLocationCoordinate2D() {
+            // A fixed seed draws the same samples on every run
+            let rng = SplitMix64(seed: 1)
+
             let coordA = CLLocationCoordinate2D(latitude: 51.5, longitude: -0.1)
             let coordB = CLLocationCoordinate2D(latitude: 51.5005, longitude: -0.099)
-            let a = Uncertain<CLLocationCoordinate2D>.coordinate(coordA, accuracy: 8.0)
-            let b = Uncertain<CLLocationCoordinate2D>.coordinate(coordB, accuracy: 8.0)
+            let a = Uncertain<CLLocationCoordinate2D>.coordinate(coordA, accuracy: 8.0, using: rng)
+            let b = Uncertain<CLLocationCoordinate2D>.coordinate(coordB, accuracy: 8.0, using: rng)
             let distance = Uncertain<CLLocationCoordinate2D>.distance(from: a, to: b)
             let meanDistance = (0 ..< 1000).map { _ in distance.sample() }.reduce(0, +) / 1000
             let trueA = CLLocation(
@@ -933,6 +988,9 @@ struct UncertainTests {
 
         @Test("Uncertain<CLLocationSpeed> from location")
         func testUncertainCLLocationSpeed() {
+            // A fixed seed draws the same samples on every run
+            let rng = SplitMix64(seed: 1)
+
             let loc = CLLocation(
                 coordinate: CLLocationCoordinate2D(latitude: 34.0, longitude: -118.0),
                 altitude: 0,
@@ -943,7 +1001,7 @@ struct UncertainTests {
                 timestamp: Date()
             )
             if #available(iOS 14.0, macOS 11.0, *) {
-                let speed = Uncertain<CLLocationSpeed>.speed(from: loc)
+                let speed = Uncertain<CLLocationSpeed>.speed(from: loc, using: rng)
                 let samples = (0 ..< 1000).map { _ in speed.sample() }
                 let meanSpeed = samples.reduce(0, +) / 1000
                 #expect(abs(meanSpeed - 15.0) < 1.0)
@@ -952,6 +1010,9 @@ struct UncertainTests {
 
         @Test("Uncertain<CLLocationDirection> from location")
         func testUncertainCLLocationDirection() {
+            // A fixed seed draws the same samples on every run
+            let rng = SplitMix64(seed: 1)
+
             let loc = CLLocation(
                 coordinate: CLLocationCoordinate2D(latitude: 34.0, longitude: -118.0),
                 altitude: 0,
@@ -962,7 +1023,7 @@ struct UncertainTests {
                 timestamp: Date()
             )
             if #available(iOS 14.0, macOS 11.0, *) {
-                let course = Uncertain<CLLocationDirection>.course(from: loc)
+                let course = Uncertain<CLLocationDirection>.course(from: loc, using: rng)
                 let samples = (0 ..< 1000).map { _ in course.sample() }
                 let meanCourse = samples.reduce(0, +) / 1000
                 #expect(abs(meanCourse - 45.0) < 5.0)
@@ -972,6 +1033,9 @@ struct UncertainTests {
 
         @Test("Parameterized speed uncertainty")
         func testParameterizedSpeedUncertainty() {
+            // A fixed seed draws the same samples on every run
+            let rng = SplitMix64(seed: 1)
+
             let loc = CLLocation(
                 coordinate: CLLocationCoordinate2D(latitude: 34.0, longitude: -118.0),
                 altitude: 0,
@@ -986,12 +1050,14 @@ struct UncertainTests {
                 let conservativeSpeed = Uncertain<CLLocationSpeed>.speed(
                     from: loc,
                     speedUncertaintyFactor: 0.05,
-                    minimumSpeedUncertainty: 0.5
+                    minimumSpeedUncertainty: 0.5,
+                    using: rng
                 )
                 let liberalSpeed = Uncertain<CLLocationSpeed>.speed(
                     from: loc,
                     speedUncertaintyFactor: 0.2,
-                    minimumSpeedUncertainty: 0.1
+                    minimumSpeedUncertainty: 0.1,
+                    using: rng
                 )
 
                 let conservativeSamples = (0 ..< 1000).map { _ in conservativeSpeed.sample() }
@@ -1009,6 +1075,9 @@ struct UncertainTests {
 
         @Test("Parameterized course uncertainty")
         func testParameterizedCourseUncertainty() {
+            // A fixed seed draws the same samples on every run
+            let rng = SplitMix64(seed: 1)
+
             let loc = CLLocation(
                 coordinate: CLLocationCoordinate2D(latitude: 34.0, longitude: -118.0),
                 altitude: 0,
@@ -1022,11 +1091,13 @@ struct UncertainTests {
                 // Test with different course uncertainties
                 let preciseCourse = Uncertain<CLLocationDirection>.course(
                     from: loc,
-                    courseAccuracy: 2.0
+                    courseAccuracy: 2.0,
+                    using: rng
                 )
                 let roughCourse = Uncertain<CLLocationDirection>.course(
                     from: loc,
-                    courseAccuracy: 15.0
+                    courseAccuracy: 15.0,
+                    using: rng
                 )
 
                 let preciseSamples = (0 ..< 1000).map { _ in preciseCourse.sample() }
@@ -1049,6 +1120,9 @@ struct UncertainTests {
 
         @Test("Course uncertainty from location courseAccuracy")
         func testCourseUncertaintyFromLocationAccuracy() {
+            // A fixed seed draws the same samples on every run
+            let rng = SplitMix64(seed: 1)
+
             if #available(iOS 14.0, macOS 11.0, *) {
                 // Create location with specific courseAccuracy
                 let locWithAccurateCourse = CLLocation(
@@ -1077,9 +1151,10 @@ struct UncertainTests {
 
                 // Test that the library uses the location's built-in courseAccuracy
                 let accurateCourse = Uncertain<CLLocationDirection>.course(
-                    from: locWithAccurateCourse
+                    from: locWithAccurateCourse,
+                    using: rng
                 )
-                let roughCourse = Uncertain<CLLocationDirection>.course(from: locWithRoughCourse)
+                let roughCourse = Uncertain<CLLocationDirection>.course(from: locWithRoughCourse, using: rng)
 
                 let accurateSamples = (0 ..< 1000).map { _ in accurateCourse.sample() }
                 let roughSamples = (0 ..< 1000).map { _ in roughCourse.sample() }
@@ -1111,7 +1186,8 @@ struct UncertainTests {
                 )
 
                 let invalidCourse = Uncertain<CLLocationDirection>.course(
-                    from: locWithInvalidCourse
+                    from: locWithInvalidCourse,
+                    using: rng
                 )
                 let invalidSample = invalidCourse.sample()
                 #expect(invalidSample == -1.0)  // Should return invalid course unchanged
@@ -1130,7 +1206,8 @@ struct UncertainTests {
                 )
 
                 let invalidAccuracyCourse = Uncertain<CLLocationDirection>.course(
-                    from: locWithInvalidAccuracy
+                    from: locWithInvalidAccuracy,
+                    using: rng
                 )
                 let invalidAccuracySample = invalidAccuracyCourse.sample()
                 #expect(invalidAccuracySample == 90.0)  // Should return base course unchanged
@@ -1169,13 +1246,17 @@ struct UncertainTests {
 
         @Test("GPS uncertainty modeling vs naive approach")
         func testGPSUncertaintyModelingVsNaive() {
+            // A fixed seed draws the same samples on every run
+            let rng = SplitMix64(seed: 1)
+
             let baseCoord = CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194)
             let accuracy = 10.0
 
             // Test the improved coordinate method
             let uncertainCoord = Uncertain<CLLocationCoordinate2D>.coordinate(
                 baseCoord,
-                accuracy: accuracy
+                accuracy: accuracy,
+                using: rng
             )
 
             // Sample many times to check distribution
@@ -1202,6 +1283,9 @@ struct UncertainTests {
 
         @Test("Altitude uncertainty modeling")
         func testAltitudeUncertaintyModeling() {
+            // A fixed seed draws the same samples on every run
+            let rng = SplitMix64(seed: 1)
+
             let baseLoc = CLLocation(
                 coordinate: CLLocationCoordinate2D(latitude: 34.0, longitude: -118.0),
                 altitude: 100.0,
@@ -1210,7 +1294,7 @@ struct UncertainTests {
                 timestamp: Date()
             )
 
-            let uncertainLoc = Uncertain<CLLocation>.from(baseLoc)
+            let uncertainLoc = Uncertain<CLLocation>.from(baseLoc, using: rng)
             let samples = (0 ..< 1000).map { _ in uncertainLoc.sample() }
             let altitudes = samples.map { $0.altitude }
 
@@ -1226,16 +1310,21 @@ struct UncertainTests {
 
         @Test("Location uncertainty propagation in calculations")
         func testLocationUncertaintyPropagationInCalculations() {
+            // A fixed seed draws the same samples on every run
+            let rng = SplitMix64(seed: 1)
+
             let locA = Uncertain<CLLocation>.location(
                 coordinate: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
                 horizontalAccuracy: 10.0,
-                altitude: 50.0
+                altitude: 50.0,
+                using: rng
             )
 
             let locB = Uncertain<CLLocation>.location(
                 coordinate: CLLocationCoordinate2D(latitude: 37.7849, longitude: -122.4094),
                 horizontalAccuracy: 10.0,
-                altitude: 60.0
+                altitude: 60.0,
+                using: rng
             )
 
             // Calculate uncertain distance and bearing
@@ -1266,6 +1355,9 @@ struct UncertainTests {
 
         @Test("Course angle normalization")
         func testCourseAngleNormalization() {
+            // A fixed seed draws the same samples on every run
+            let rng = SplitMix64(seed: 1)
+
             if #available(iOS 14.0, macOS 11.0, *) {
                 // Test course near 0/360 boundary
                 let locNorth = CLLocation(
@@ -1280,7 +1372,7 @@ struct UncertainTests {
 
                 let course = Uncertain<CLLocationDirection>.course(
                     from: locNorth,
-                    courseAccuracy: 10.0  // Large uncertainty to test boundary
+                    courseAccuracy: 10.0  // Large uncertainty to test boundary, using: rng
                 )
 
                 let samples = (0 ..< 1000).map { _ in course.sample() }
@@ -1299,7 +1391,7 @@ struct UncertainTests {
                     timestamp: Date()
                 )
 
-                let exactCourse = Uncertain<CLLocationDirection>.course(from: locExact)
+                let exactCourse = Uncertain<CLLocationDirection>.course(from: locExact, using: rng)
                 let exactSamples = (0 ..< 100).map { _ in exactCourse.sample() }
 
                 #expect(exactSamples.allSatisfy { $0 >= 0 && $0 < 360 })
@@ -1308,13 +1400,18 @@ struct UncertainTests {
 
         @Test("CLLocation instance methods for distance calculations")
         func testCLLocationInstanceMethods() {
+            // A fixed seed draws the same samples on every run
+            let rng = SplitMix64(seed: 1)
+
             let locA = Uncertain<CLLocation>.location(
                 coordinate: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
-                horizontalAccuracy: 5.0
+                horizontalAccuracy: 5.0,
+                using: rng
             )
             let locB = Uncertain<CLLocation>.location(
                 coordinate: CLLocationCoordinate2D(latitude: 37.7849, longitude: -122.4094),
-                horizontalAccuracy: 5.0
+                horizontalAccuracy: 5.0,
+                using: rng
             )
             let specificLoc = CLLocation(
                 coordinate: CLLocationCoordinate2D(latitude: 37.7849, longitude: -122.4094),
@@ -1361,13 +1458,18 @@ struct UncertainTests {
 
         @Test("CLLocationCoordinate2D instance methods")
         func testCLLocationCoordinate2DInstanceMethods() {
+            // A fixed seed draws the same samples on every run
+            let rng = SplitMix64(seed: 1)
+
             let coordA = Uncertain<CLLocationCoordinate2D>.coordinate(
                 CLLocationCoordinate2D(latitude: 40.7128, longitude: -74.0060),
-                accuracy: 8.0
+                accuracy: 8.0,
+                using: rng
             )
             let coordB = Uncertain<CLLocationCoordinate2D>.coordinate(
                 CLLocationCoordinate2D(latitude: 40.7589, longitude: -73.9851),
-                accuracy: 8.0
+                accuracy: 8.0,
+                using: rng
             )
             let specificCoord = CLLocationCoordinate2D(latitude: 40.7589, longitude: -73.9851)
 
@@ -1412,6 +1514,9 @@ struct UncertainTests {
 
         @Test("CLLocationSpeed instance methods for unit conversions")
         func testCLLocationSpeedInstanceMethods() {
+            // A fixed seed draws the same samples on every run
+            let rng = SplitMix64(seed: 1)
+
             if #available(iOS 14.0, macOS 11.0, *) {
                 let baseSpeed = 20.0  // 20 m/s
                 let location = CLLocation(
@@ -1424,7 +1529,7 @@ struct UncertainTests {
                     timestamp: Date()
                 )
 
-                let uncertainSpeed = Uncertain<CLLocationSpeed>.speed(from: location)
+                let uncertainSpeed = Uncertain<CLLocationSpeed>.speed(from: location, using: rng)
 
                 // Test speed comparison methods
                 let speedLimit = 15.0  // m/s
@@ -1447,6 +1552,9 @@ struct UncertainTests {
 
         @Test("CLLocationDirection instance methods for angular calculations")
         func testCLLocationDirectionInstanceMethods() {
+            // A fixed seed draws the same samples on every run
+            let rng = SplitMix64(seed: 1)
+
             if #available(iOS 14.0, macOS 11.0, *) {
                 let baseCourse = 90.0  // Due east
                 let location = CLLocation(
@@ -1459,7 +1567,7 @@ struct UncertainTests {
                     timestamp: Date()
                 )
 
-                let uncertainDirection = Uncertain<CLLocationDirection>.course(from: location)
+                let uncertainDirection = Uncertain<CLLocationDirection>.course(from: location, using: rng)
 
                 // Test angular difference calculations
                 let targetDirection1 = 45.0  // 45° difference
@@ -1485,7 +1593,8 @@ struct UncertainTests {
                         course: 45.0,
                         speed: 10.0,
                         timestamp: Date()
-                    )
+                    ),
+                    using: rng
                 )
 
                 let uncertainDiff = uncertainDirection.angularDifference(to: targetUncertain)
@@ -1513,7 +1622,8 @@ struct UncertainTests {
                         speed: 10.0,
                         timestamp: Date()
                     ),
-                    courseAccuracy: 2.0
+                    courseAccuracy: 2.0,
+                    using: rng
                 )
 
                 let boundaryDiff = northDirection.angularDifference(to: 350.0)
@@ -1527,6 +1637,9 @@ struct UncertainTests {
 
         @Test("Speed limit enforcement example with instance methods")
         func testSpeedLimitEnforcementWithInstanceMethods() {
+            // A fixed seed draws the same samples on every run
+            let rng = SplitMix64(seed: 1)
+
             if #available(iOS 14.0, macOS 11.0, *) {
                 // Simulate a speed enforcement scenario
                 let location = CLLocation(
@@ -1540,7 +1653,7 @@ struct UncertainTests {
                     timestamp: Date()
                 )
 
-                let uncertainSpeed = Uncertain<CLLocationSpeed>.speed(from: location)
+                let uncertainSpeed = Uncertain<CLLocationSpeed>.speed(from: location, using: rng)
 
                 // Different speed limits
                 let cityLimit = 25.0 * 0.44704  // 25 mph in m/s
@@ -1579,6 +1692,9 @@ struct UncertainTests {
 
         @Test("Navigation accuracy with direction instance methods")
         func testNavigationAccuracyWithDirectionInstanceMethods() {
+            // A fixed seed draws the same samples on every run
+            let rng = SplitMix64(seed: 1)
+
             if #available(iOS 14.0, macOS 11.0, *) {
                 // Simulate a navigation scenario
                 let currentHeading = Uncertain<CLLocationDirection>.course(
@@ -1592,7 +1708,8 @@ struct UncertainTests {
                         timestamp: Date()
                     ),
                     // 5° accuracy puts 98% of headings within tolerance
-                    courseAccuracy: 5.0
+                    courseAccuracy: 5.0,
+                    using: rng
                 )
 
                 let desiredHeading = 50.0  // Slightly more east
@@ -1624,10 +1741,14 @@ struct UncertainTests {
 
         @Test("Complex location calculations with instance methods")
         func testComplexLocationCalculationsWithInstanceMethods() {
+            // A fixed seed draws the same samples on every run
+            let rng = SplitMix64(seed: 1)
+
             // Test chaining of instance methods for complex calculations
             let startLocation = Uncertain<CLLocation>.location(
                 coordinate: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
-                horizontalAccuracy: 10.0
+                horizontalAccuracy: 10.0,
+                using: rng
             )
 
             let checkpoint1 = CLLocation(
