@@ -313,10 +313,12 @@ when events occur independently at a constant rate.
 #### [Bernoulli Distribution][bernoulli-distribution]
 
 ```swift
-let bernoulli = Uncertain<Bool>.bernoulli(probability: 0.7)
+let bernoulli = Uncertain<Double>.bernoulli(probability: 0.7)  // Uncertain<Bool>
 ```
 
 Models a single trial with two possible outcomes (success/failure).
+The constructor is declared on `Uncertain<Double>`
+and returns an `Uncertain<Bool>`.
 
 #### [Categorical Distribution][categorical-distribution]
 
