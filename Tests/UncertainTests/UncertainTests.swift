@@ -285,6 +285,60 @@ struct UncertainTests {
         #expect(abs(mean - 50.0) < 5.0)
     }
 
+    @Test("Normal distribution reaches its tails")
+    func testNormalDistributionTails() {
+        let standardNormal = Uncertain<Double>.normal(mean: 0.0, standardDeviation: 1.0)
+
+        // P(|Z| > 4) ≈ 6.334e-5, so 500,000 samples contain about 32 such values.
+        // Under a Poisson approximation, P(count == 0) ≈ e^-31.7 ≈ 2e-14 and P(count >= 150) < 1e-40.
+        let sampleCount = 500_000
+        var beyondFour = 0
+        for _ in 0 ..< sampleCount where abs(standardNormal.sample()) > 4.0 {
+            beyondFour += 1
+        }
+
+        #expect(beyondFour > 0)
+        #expect(beyondFour < 150)
+    }
+
+    @Test("Exponential distribution produces finite positive values")
+    func testExponentialDistribution() {
+        let rate = 2.0
+        let waitingTime = Uncertain<Double>.exponential(rate: rate)
+
+        let samples = (0 ..< 100_000).map { _ in waitingTime.sample() }
+        #expect(samples.allSatisfy { $0.isFinite && $0 > 0 })
+
+        // The standard error of the mean is 0.5 / sqrt(100,000) ≈ 0.0016,
+        // so the tolerance of 0.016 is 10 standard errors (P(failure) ≈ 2e-23).
+        let mean = samples.reduce(0, +) / Double(samples.count)
+        #expect(abs(mean - 1.0 / rate) < 0.016)
+    }
+
+    @Test("Certain and impossible outcomes never change")
+    func testCertainAndImpossibleOutcomes() {
+        let sampleCount = 10_000
+
+        let alwaysTrue = Uncertain<Double>.bernoulli(probability: 1.0)
+        let neverTrue = Uncertain<Double>.bernoulli(probability: 0.0)
+        #expect((0 ..< sampleCount).allSatisfy { _ in alwaysTrue.sample() })
+        #expect((0 ..< sampleCount).allSatisfy { _ in !neverTrue.sample() })
+
+        let allSuccesses = Uncertain<Int>.binomial(trials: 10, probability: 1.0)
+        let noSuccesses = Uncertain<Int>.binomial(trials: 10, probability: 0.0)
+        #expect((0 ..< sampleCount).allSatisfy { _ in allSuccesses.sample() == 10 })
+        #expect((0 ..< sampleCount).allSatisfy { _ in noSuccesses.sample() == 0 })
+
+        let category = Uncertain<String>.categorical(["never": 0.0, "sometimes": 0.4, "often": 0.6])!
+        #expect((0 ..< sampleCount).allSatisfy { _ in category.sample() != "never" })
+
+        let mixture = Uncertain<Double>.mixture(
+            of: [.point(0.0), .point(1.0), .point(2.0)],
+            weights: [0.0, 1.0, 0.0]
+        )
+        #expect((0 ..< sampleCount).allSatisfy { _ in mixture.sample() == 1.0 })
+    }
+
     // MARK: - Arithmetic Operations with Uncertainty Propagation
 
     @Test("Uncertainty propagation through arithmetic")
