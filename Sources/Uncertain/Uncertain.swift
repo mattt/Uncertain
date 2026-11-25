@@ -410,6 +410,29 @@ extension Uncertain {
     public static func mixture(of components: [Uncertain<T>], weights: [Double]? = nil)
         -> Uncertain<T>
     {
+        mixture(of: components, weights: weights, using: SystemRandomNumberGenerator())
+    }
+
+    /// Creates a mixture of distributions with optional weights,
+    /// using the given generator to select a component.
+    ///
+    /// The generator selects the component only.
+    /// Each component draws its sample with its own generator,
+    /// so give the components seeded generators too for reproducible samples.
+    ///
+    /// - Parameters:
+    ///   - components: An array of distributions to mix.
+    ///   - weights: An optional array of weights corresponding to each distribution.
+    ///              If `nil`, uses uniform weights.
+    ///   - generator: The random number generator that selects a component.
+    ///     The distribution keeps its own copy of a value-type generator.
+    /// - Returns: A new uncertain value representing the mixture distribution.
+    /// - Precondition: If weights are provided, `components.count == weights.count`.
+    public static func mixture(
+        of components: [Uncertain<T>],
+        weights: [Double]? = nil,
+        using generator: some RandomNumberGenerator & Sendable
+    ) -> Uncertain<T> {
         precondition(!components.isEmpty, "At least one component required")
         if components.count == 1 {
             return components[0]
@@ -431,10 +454,12 @@ extension Uncertain {
         }
         // If rounding leaves the last cumulative weight below 1, fall back to the last component with weight
         let fallback = normalized.lastIndex(where: { $0 > 0 }) ?? (components.count - 1)
+        let shared = SharedGenerator(generator)
         return Uncertain<T> {
             // A half-open range and a strict comparison never select a component with zero weight
-            let r = Double.random(in: 0 ..< 1)
+            let r = shared.withGenerator { Double.random(in: 0 ..< 1, using: &$0) }
             let idx = cumulative.firstIndex(where: { r < $0 }) ?? fallback
+            // Sample the component after the lock is released
             return components[idx].sample()
         }
     }
@@ -444,8 +469,26 @@ extension Uncertain {
     /// - Parameter data: An array of observed values.
     /// - Returns: A new uncertain value that randomly selects from the provided data, or nil if data is empty.
     public static func empirical(_ data: [T]) -> Uncertain<T>? {
+        empirical(data, using: SystemRandomNumberGenerator())
+    }
+
+    /// Creates an empirical distribution from observed data,
+    /// using the given generator to select values.
+    ///
+    /// - Parameters:
+    ///   - data: An array of observed values.
+    ///   - generator: The random number generator to draw from.
+    ///     The distribution keeps its own copy of a value-type generator.
+    /// - Returns: A new uncertain value that randomly selects from the provided data, or nil if data is empty.
+    public static func empirical(
+        _ data: [T],
+        using generator: some RandomNumberGenerator & Sendable
+    ) -> Uncertain<T>? {
         guard !data.isEmpty else { return nil }
-        return Uncertain<T> { data.randomElement()! }
+        let shared = SharedGenerator(generator)
+        return Uncertain<T> {
+            shared.withGenerator { data.randomElement(using: &$0)! }
+        }
     }
 }
 
@@ -455,17 +498,37 @@ extension Uncertain where T: Hashable {
     /// - Parameter probabilities: A dictionary mapping values to their probabilities.
     /// - Returns: A new uncertain value representing the categorical distribution, or nil if input is empty.
     public static func categorical(_ probabilities: [T: Double]) -> Uncertain<T>? {
+        categorical(probabilities, using: SystemRandomNumberGenerator())
+    }
+
+    /// Creates a categorical distribution from value-probability pairs,
+    /// using the given generator to select values.
+    ///
+    /// - Parameters:
+    ///   - probabilities: A dictionary mapping values to their probabilities.
+    ///   - generator: The random number generator to draw from.
+    ///     The distribution keeps its own copy of a value-type generator.
+    /// - Returns: A new uncertain value representing the categorical distribution, or nil if input is empty.
+    /// - Note: The order of values with equal probabilities
+    ///   follows the dictionary's iteration order, which can change between processes.
+    ///   For samples that are the same in every process,
+    ///   give each value a different probability.
+    public static func categorical(
+        _ probabilities: [T: Double],
+        using generator: some RandomNumberGenerator & Sendable
+    ) -> Uncertain<T>? {
         guard !probabilities.isEmpty else { return nil }
-        let total = probabilities.values.reduce(0, +)
-        let normalized = probabilities.mapValues { $0 / total }
-        let sorted = normalized.sorted { $0.value < $1.value }
+        // Sum in sorted order, so that the total does not depend on the dictionary's iteration order
+        let sorted = probabilities.sorted { $0.value < $1.value }
+        let total = sorted.reduce(0) { $0 + $1.value }
         let cumulative = sorted.reduce(into: [(T, Double)]()) { acc, pair in
-            let sum = (acc.last?.1 ?? 0) + pair.value
+            let sum = (acc.last?.1 ?? 0) + pair.value / total
             acc.append((pair.key, sum))
         }
+        let shared = SharedGenerator(generator)
         return Uncertain<T> {
             // A half-open range and a strict comparison never select a value with zero probability
-            let r = Double.random(in: 0 ..< 1)
+            let r = shared.withGenerator { Double.random(in: 0 ..< 1, using: &$0) }
             // Defensive: fallback to last element if none found (should not happen if cumulative is non-empty)
             return cumulative.first(where: { r < $0.1 })?.0 ?? cumulative.last!.0
         }
@@ -481,14 +544,34 @@ extension Uncertain where T: FixedWidthInteger {
     ///   - probability: The probability of success on each trial.
     /// - Returns: A new uncertain value with a binomial distribution.
     public static func binomial(trials: T, probability: Double) -> Uncertain<T> {
-        Uncertain<T> {
-            var count: T = 0
-            for _ in 0 ..< trials {
-                if Double.random(in: 0 ..< 1) < probability {
-                    count += 1
+        binomial(trials: trials, probability: probability, using: SystemRandomNumberGenerator())
+    }
+
+    /// Creates a binomial distribution for any integer type,
+    /// using the given generator.
+    ///
+    /// - Parameters:
+    ///   - trials: The number of trials.
+    ///   - probability: The probability of success on each trial.
+    ///   - generator: The random number generator to draw from.
+    ///     The distribution keeps its own copy of a value-type generator.
+    /// - Returns: A new uncertain value with a binomial distribution.
+    public static func binomial(
+        trials: T,
+        probability: Double,
+        using generator: some RandomNumberGenerator & Sendable
+    ) -> Uncertain<T> {
+        let shared = SharedGenerator(generator)
+        return Uncertain<T> {
+            shared.withGenerator { generator in
+                var count: T = 0
+                for _ in 0 ..< trials {
+                    if Double.random(in: 0 ..< 1, using: &generator) < probability {
+                        count += 1
+                    }
                 }
+                return count
             }
-            return count
         }
     }
 
@@ -505,15 +588,40 @@ extension Uncertain where T: FixedWidthInteger {
     /// - Precondition: `lambda` is finite and not negative.
     ///   Sampling traps if a sample is larger than `T.max`.
     public static func poisson(lambda: Double) -> Uncertain<T> {
+        poisson(lambda: lambda, using: SystemRandomNumberGenerator())
+    }
+
+    /// Creates a Poisson distribution for any integer type,
+    /// using the given generator.
+    ///
+    /// For `lambda` less than 10, each sample uses Knuth's multiplication method.
+    /// For larger `lambda`, each sample uses Hörmann's transformed rejection method (PTRS),
+    /// which takes constant expected time.
+    ///
+    /// A `lambda` of 0 always gives 0.
+    ///
+    /// - Parameters:
+    ///   - lambda: The rate parameter, which is the mean of the distribution.
+    ///   - generator: The random number generator to draw from.
+    ///     The distribution keeps its own copy of a value-type generator.
+    /// - Returns: A new uncertain value with a Poisson distribution.
+    /// - Precondition: `lambda` is finite and not negative.
+    ///   Sampling traps if a sample is larger than `T.max`.
+    public static func poisson(
+        lambda: Double,
+        using generator: some RandomNumberGenerator & Sendable
+    ) -> Uncertain<T> {
         precondition(
             lambda.isFinite && lambda >= 0,
             "lambda must be finite and not negative"
         )
+        let shared = SharedGenerator(generator)
         return Uncertain<T> {
-            let count =
+            let count = shared.withGenerator { generator in
                 lambda < 10
-                ? poissonByMultiplication(lambda: lambda)
-                : poissonByTransformedRejection(lambda: lambda)
+                    ? poissonByMultiplication(lambda: lambda, using: &generator)
+                    : poissonByTransformedRejection(lambda: lambda, using: &generator)
+            }
             guard let value = T(exactly: count) else {
                 preconditionFailure("Poisson sample \(count) is larger than \(T.self).max")
             }
@@ -528,13 +636,16 @@ extension Uncertain where T: FixedWidthInteger {
 /// The expected number of iterations is `lambda + 1`,
 /// and `exp(-lambda)` underflows for `lambda` above about 745,
 /// so use this function only for small `lambda`.
-private func poissonByMultiplication(lambda: Double) -> Double {
+private func poissonByMultiplication(
+    lambda: Double,
+    using generator: inout some RandomNumberGenerator
+) -> Double {
     let limit = exp(-lambda)
     var count = 0.0
-    var product = Double.random(in: 0 ... 1)
+    var product = Double.random(in: 0 ... 1, using: &generator)
     while product > limit {
         count += 1
-        product *= Double.random(in: 0 ... 1)
+        product *= Double.random(in: 0 ... 1, using: &generator)
     }
     return count
 }
@@ -546,7 +657,10 @@ private func poissonByMultiplication(lambda: Double) -> Double {
 /// The method is exact for `lambda` of 10 or more, up to floating-point precision.
 /// The expected number of iterations is about 1.33 at `lambda` 10
 /// and falls toward 1.124 as `lambda` grows.
-private func poissonByTransformedRejection(lambda: Double) -> Double {
+private func poissonByTransformedRejection(
+    lambda: Double,
+    using generator: inout some RandomNumberGenerator
+) -> Double {
     let logLambda = log(lambda)
     let b = 0.931 + 2.53 * lambda.squareRoot()
     let a = -0.059 + 0.02483 * b
@@ -554,8 +668,8 @@ private func poissonByTransformedRejection(lambda: Double) -> Double {
     let vR = 0.9277 - 3.6224 / (b - 2)
 
     while true {
-        let u = Double.random(in: 0 ..< 1) - 0.5
-        let v = Double.random(in: 0 ..< 1)
+        let u = Double.random(in: 0 ..< 1, using: &generator) - 0.5
+        let v = Double.random(in: 0 ..< 1, using: &generator)
         let us = 0.5 - abs(u)
         let k = ((2 * a / us + b) * u + lambda + 0.43).rounded(.down)
 
@@ -583,12 +697,37 @@ extension Uncertain where T == Double {
         mean: Double,
         standardDeviation: Double
     ) -> Uncertain<Double> {
+        normal(mean: mean, standardDeviation: standardDeviation, using: SystemRandomNumberGenerator())
+    }
+
+    /// Creates a normal (Gaussian) distribution that draws from the given generator.
+    ///
+    /// Distributions made from the same seeded generator give the same samples on every run:
+    ///
+    /// ```swift
+    /// let speed = Uncertain<Double>.normal(
+    ///     mean: 5.0,
+    ///     standardDeviation: 2.0,
+    ///     using: SplitMix64(seed: 42)
+    /// )
+    /// ```
+    ///
+    /// - Parameters:
+    ///   - mean: The mean of the distribution.
+    ///   - standardDeviation: The standard deviation of the distribution.
+    ///   - generator: The random number generator to draw from.
+    ///     The distribution keeps its own copy of a value-type generator.
+    /// - Returns: A new uncertain value with a normal distribution.
+    public static func normal(
+        mean: Double,
+        standardDeviation: Double,
+        using generator: some RandomNumberGenerator & Sendable
+    ) -> Uncertain<Double> {
+        let shared = SharedGenerator(generator)
         return Uncertain<Double> {
-            // Box-Muller transform for normal distribution
-            let u1 = Double.random(in: Double.ulpOfOne ..< 1.0)  // Avoid log(0)
-            let u2 = Double.random(in: 0.0 ..< 1.0)
-            let z0 = sqrt(-2.0 * log(u1)) * cos(2.0 * Double.pi * u2)
-            return mean + standardDeviation * z0
+            shared.withGenerator { generator in
+                sampleNormal(mean: mean, standardDeviation: standardDeviation, using: &generator)
+            }
         }
     }
 
@@ -599,8 +738,25 @@ extension Uncertain where T == Double {
     ///   - max: The maximum value.
     /// - Returns: A new uncertain value with a uniform distribution.
     public static func uniform(min: Double, max: Double) -> Uncertain<Double> {
+        uniform(min: min, max: max, using: SystemRandomNumberGenerator())
+    }
+
+    /// Creates a uniform distribution that draws from the given generator.
+    ///
+    /// - Parameters:
+    ///   - min: The minimum value.
+    ///   - max: The maximum value.
+    ///   - generator: The random number generator to draw from.
+    ///     The distribution keeps its own copy of a value-type generator.
+    /// - Returns: A new uncertain value with a uniform distribution.
+    public static func uniform(
+        min: Double,
+        max: Double,
+        using generator: some RandomNumberGenerator & Sendable
+    ) -> Uncertain<Double> {
+        let shared = SharedGenerator(generator)
         return Uncertain<Double> {
-            Double.random(in: min ... max)
+            shared.withGenerator { Double.random(in: min ... max, using: &$0) }
         }
     }
 
@@ -609,11 +765,28 @@ extension Uncertain where T == Double {
     /// - Parameter rate: The rate parameter (lambda).
     /// - Returns: A new uncertain value with an exponential distribution.
     public static func exponential(rate: Double) -> Uncertain<Double> {
+        exponential(rate: rate, using: SystemRandomNumberGenerator())
+    }
+
+    /// Creates an exponential distribution that draws from the given generator.
+    ///
+    /// - Parameters:
+    ///   - rate: The rate parameter (lambda).
+    ///   - generator: The random number generator to draw from.
+    ///     The distribution keeps its own copy of a value-type generator.
+    /// - Returns: A new uncertain value with an exponential distribution.
+    public static func exponential(
+        rate: Double,
+        using generator: some RandomNumberGenerator & Sendable
+    ) -> Uncertain<Double> {
+        let shared = SharedGenerator(generator)
         return Uncertain<Double> {
-            // Generate exponential using inverse transform sampling
-            // F^(-1)(u) = -ln(1-u) / rate
-            let u = Double.random(in: Double.ulpOfOne ..< 1.0)  // Avoid log(0)
-            return -log(1.0 - u) / rate
+            shared.withGenerator { generator in
+                // Generate exponential using inverse transform sampling
+                // F^(-1)(u) = -ln(1-u) / rate
+                let u = Double.random(in: Double.ulpOfOne ..< 1.0, using: &generator)  // Avoid log(0)
+                return -log(1.0 - u) / rate
+            }
         }
     }
 
@@ -622,7 +795,24 @@ extension Uncertain where T == Double {
     /// - Parameter probability: The probability of success.
     /// - Returns: A new uncertain boolean value.
     public static func bernoulli(probability: Double) -> Uncertain<Bool> {
-        Uncertain<Bool> { Double.random(in: 0 ..< 1) < probability }
+        bernoulli(probability: probability, using: SystemRandomNumberGenerator())
+    }
+
+    /// Creates a Bernoulli distribution that draws from the given generator.
+    ///
+    /// - Parameters:
+    ///   - probability: The probability of success.
+    ///   - generator: The random number generator to draw from.
+    ///     The distribution keeps its own copy of a value-type generator.
+    /// - Returns: A new uncertain boolean value.
+    public static func bernoulli(
+        probability: Double,
+        using generator: some RandomNumberGenerator & Sendable
+    ) -> Uncertain<Bool> {
+        let shared = SharedGenerator(generator)
+        return Uncertain<Bool> {
+            shared.withGenerator { Double.random(in: 0 ..< 1, using: &$0) < probability }
+        }
     }
 
     /// Creates a Kumaraswamy distribution.
@@ -632,16 +822,35 @@ extension Uncertain where T == Double {
     ///   - b: The second shape parameter (must be > 0).
     /// - Returns: A new uncertain value with a Kumaraswamy distribution in range [0, 1].
     public static func kumaraswamy(a: Double, b: Double) -> Uncertain<Double> {
+        kumaraswamy(a: a, b: b, using: SystemRandomNumberGenerator())
+    }
+
+    /// Creates a Kumaraswamy distribution that draws from the given generator.
+    ///
+    /// - Parameters:
+    ///   - a: The first shape parameter (must be > 0).
+    ///   - b: The second shape parameter (must be > 0).
+    ///   - generator: The random number generator to draw from.
+    ///     The distribution keeps its own copy of a value-type generator.
+    /// - Returns: A new uncertain value with a Kumaraswamy distribution in range [0, 1].
+    public static func kumaraswamy(
+        a: Double,
+        b: Double,
+        using generator: some RandomNumberGenerator & Sendable
+    ) -> Uncertain<Double> {
         precondition(a > 0 && b > 0, "Kumaraswamy distribution parameters must be positive")
 
         // Cache reciprocals to avoid repeated division
         let reciprocalA = 1.0 / a
         let reciprocalB = 1.0 / b
 
+        let shared = SharedGenerator(generator)
         return Uncertain<Double> {
-            // Generate Kumaraswamy using inverse transform sampling
-            let u = Double.random(in: Double.ulpOfOne ..< 1.0)  // Avoid exactly 0 or 1
-            return pow(1.0 - pow(1.0 - u, reciprocalB), reciprocalA)
+            shared.withGenerator { generator in
+                // Generate Kumaraswamy using inverse transform sampling
+                let u = Double.random(in: Double.ulpOfOne ..< 1.0, using: &generator)  // Avoid exactly 0 or 1
+                return pow(1.0 - pow(1.0 - u, reciprocalB), reciprocalA)
+            }
         }
     }
 
@@ -653,13 +862,25 @@ extension Uncertain where T == Double {
     /// - Parameter scale: The scale parameter (must be > 0).
     /// - Returns: A new uncertain value with a Rayleigh distribution.
     public static func rayleigh(scale: Double) -> Uncertain<Double> {
+        rayleigh(scale: scale, using: SystemRandomNumberGenerator())
+    }
+
+    /// Creates a Rayleigh distribution that draws from the given generator.
+    ///
+    /// - Parameters:
+    ///   - scale: The scale parameter (must be > 0).
+    ///   - generator: The random number generator to draw from.
+    ///     The distribution keeps its own copy of a value-type generator.
+    /// - Returns: A new uncertain value with a Rayleigh distribution.
+    public static func rayleigh(
+        scale: Double,
+        using generator: some RandomNumberGenerator & Sendable
+    ) -> Uncertain<Double> {
         precondition(scale > 0, "Rayleigh distribution scale parameter must be positive")
 
+        let shared = SharedGenerator(generator)
         return Uncertain<Double> {
-            // Generate Rayleigh using inverse transform sampling
-            // F^(-1)(u) = scale * sqrt(-2 * ln(1-u))
-            let u = Double.random(in: Double.ulpOfOne ..< 1.0)  // Avoid exactly 0 or 1
-            return scale * sqrt(-2.0 * log(1.0 - u))
+            shared.withGenerator { sampleRayleigh(scale: scale, using: &$0) }
         }
     }
 
@@ -1009,59 +1230,43 @@ extension Uncertain where T == Bool {
         /// - Parameter location: The CLLocation with accuracy information.
         /// - Returns: A new uncertain location value.
         public static func from(_ location: CLLocation) -> Uncertain<CLLocation> {
-            return Uncertain<CLLocation> {
-                let horizontalAccuracy = location.horizontalAccuracy
-                let verticalAccuracy = location.verticalAccuracy
+            from(location, using: SystemRandomNumberGenerator())
+        }
 
+        /// Creates an uncertain location from a CLLocation,
+        /// using the given generator.
+        ///
+        /// Models GPS uncertainty using a Rayleigh distribution
+        /// for radial distance from the true location,
+        /// combined with a uniform angular distribution.
+        ///
+        /// Uses the location's built-in accuracy values.
+        /// If the location has negative accuracy (indicating invalid readings),
+        /// the location is returned unchanged.
+        ///
+        /// - Parameters:
+        ///   - location: The CLLocation with accuracy information.
+        ///   - generator: The random number generator to draw from.
+        ///     The distribution keeps its own copy of a value-type generator.
+        /// - Returns: A new uncertain location value.
+        public static func from(
+            _ location: CLLocation,
+            using generator: some RandomNumberGenerator & Sendable
+        ) -> Uncertain<CLLocation> {
+            let shared = SharedGenerator(generator)
+            return Uncertain<CLLocation> {
                 // If accuracy is negative, the reading is invalid
-                guard horizontalAccuracy >= 0 else {
+                guard location.horizontalAccuracy >= 0 else {
                     return location
                 }
-
-                // Model horizontal uncertainty using Rayleigh distribution for radial distance
-                let earthRadius = 6_371_000.0  // meters
-                let lat = location.coordinate.latitude * .pi / 180
-
-                // Generate radial distance using Rayleigh distribution
-                // horizontalAccuracy represents the standard deviation of GPS error
-                let radialDistance = Uncertain<Double>.rayleigh(
-                    scale: horizontalAccuracy
-                ).sample()
-
-                // Generate random direction (angle) uniformly
-                let angle = Double.random(in: 0 ... (2 * .pi))
-
-                // Convert polar coordinates to Cartesian offsets
-                let northOffset = radialDistance * cos(angle)
-                let eastOffset = radialDistance * sin(angle)
-
-                // Convert meter offsets to lat/lon
-                let latOffset = northOffset / earthRadius * 180 / .pi
-                let lonOffset = eastOffset / (earthRadius * cos(lat)) * 180 / .pi
-
-                let uncertainCoordinate = CLLocationCoordinate2D(
-                    latitude: location.coordinate.latitude + latOffset,
-                    longitude: location.coordinate.longitude + lonOffset
-                )
-
-                // Model altitude uncertainty if available
-                let uncertainAltitude: Double
-                if verticalAccuracy >= 0 {
-                    uncertainAltitude =
-                        location.altitude
-                        + Uncertain<Double>.normal(mean: 0, standardDeviation: verticalAccuracy)
-                        .sample()
-                } else {
-                    uncertainAltitude = location.altitude
+                return shared.withGenerator { generator in
+                    displacedLocation(
+                        location,
+                        horizontalAccuracy: location.horizontalAccuracy,
+                        verticalAccuracy: location.verticalAccuracy,
+                        using: &generator
+                    )
                 }
-
-                return CLLocation(
-                    coordinate: uncertainCoordinate,
-                    altitude: uncertainAltitude,
-                    horizontalAccuracy: horizontalAccuracy,
-                    verticalAccuracy: verticalAccuracy,
-                    timestamp: location.timestamp
-                )
             }
         }
 
@@ -1084,54 +1289,49 @@ extension Uncertain where T == Bool {
             horizontalAccuracy: CLLocationAccuracy,
             verticalAccuracy: CLLocationAccuracy? = nil
         ) -> Uncertain<CLLocation> {
+            from(
+                location,
+                horizontalAccuracy: horizontalAccuracy,
+                verticalAccuracy: verticalAccuracy,
+                using: SystemRandomNumberGenerator()
+            )
+        }
+
+        /// Creates an uncertain location from a CLLocation with custom accuracy values,
+        /// using the given generator.
+        ///
+        /// Models GPS uncertainty using a Rayleigh distribution
+        /// for radial distance from the true location,
+        /// combined with a uniform angular distribution.
+        ///
+        /// This overload allows you to specify custom uncertainty values,
+        /// overriding the location's built-in accuracy measurements.
+        ///
+        /// - Parameters:
+        ///   - location: The CLLocation to use as the base position.
+        ///   - horizontalAccuracy: Custom horizontal accuracy in meters (must be >= 0).
+        ///   - verticalAccuracy: Custom vertical accuracy in meters (optional).
+        ///   - generator: The random number generator to draw from.
+        ///     The distribution keeps its own copy of a value-type generator.
+        /// - Returns: A new uncertain location value with the specified uncertainties.
+        public static func from(
+            _ location: CLLocation,
+            horizontalAccuracy: CLLocationAccuracy,
+            verticalAccuracy: CLLocationAccuracy? = nil,
+            using generator: some RandomNumberGenerator & Sendable
+        ) -> Uncertain<CLLocation> {
             precondition(horizontalAccuracy >= 0, "Horizontal accuracy must be non-negative")
 
+            let shared = SharedGenerator(generator)
             return Uncertain<CLLocation> {
-                let vAccuracy = verticalAccuracy ?? location.verticalAccuracy
-
-                // Model horizontal uncertainty using Rayleigh distribution for radial distance
-                let earthRadius = 6_371_000.0  // meters
-                let lat = location.coordinate.latitude * .pi / 180
-
-                // Generate radial distance using Rayleigh distribution
-                let radialDistance = Uncertain<Double>.rayleigh(
-                    scale: horizontalAccuracy
-                ).sample()
-
-                // Generate random direction (angle) uniformly
-                let angle = Double.random(in: 0 ... (2 * .pi))
-
-                // Convert polar coordinates to Cartesian offsets
-                let northOffset = radialDistance * cos(angle)
-                let eastOffset = radialDistance * sin(angle)
-
-                // Convert meter offsets to lat/lon
-                let latOffset = northOffset / earthRadius * 180 / .pi
-                let lonOffset = eastOffset / (earthRadius * cos(lat)) * 180 / .pi
-
-                let uncertainCoordinate = CLLocationCoordinate2D(
-                    latitude: location.coordinate.latitude + latOffset,
-                    longitude: location.coordinate.longitude + lonOffset
-                )
-
-                // Model altitude uncertainty if available
-                let uncertainAltitude: Double
-                if vAccuracy >= 0 {
-                    uncertainAltitude =
-                        location.altitude
-                        + Uncertain<Double>.normal(mean: 0, standardDeviation: vAccuracy)
-                        .sample()
-                } else {
-                    uncertainAltitude = location.altitude
+                shared.withGenerator { generator in
+                    displacedLocation(
+                        location,
+                        horizontalAccuracy: horizontalAccuracy,
+                        verticalAccuracy: verticalAccuracy ?? location.verticalAccuracy,
+                        using: &generator
+                    )
                 }
-
-                return CLLocation(
-                    coordinate: uncertainCoordinate,
-                    altitude: uncertainAltitude,
-                    horizontalAccuracy: horizontalAccuracy,
-                    verticalAccuracy: vAccuracy,
-                    timestamp: location.timestamp
-                )
             }
         }
 
@@ -1149,6 +1349,33 @@ extension Uncertain where T == Bool {
             verticalAccuracy: CLLocationAccuracy = -1,
             altitude: CLLocationDistance = 0
         ) -> Uncertain<CLLocation> {
+            location(
+                coordinate: coordinate,
+                horizontalAccuracy: horizontalAccuracy,
+                verticalAccuracy: verticalAccuracy,
+                altitude: altitude,
+                using: SystemRandomNumberGenerator()
+            )
+        }
+
+        /// Creates an uncertain location with specified uncertainties,
+        /// using the given generator.
+        ///
+        /// - Parameters:
+        ///   - coordinate: The GPS coordinate.
+        ///   - horizontalAccuracy: The horizontal accuracy in meters.
+        ///   - verticalAccuracy: The vertical accuracy in meters.
+        ///   - altitude: The altitude in meters.
+        ///   - generator: The random number generator to draw from.
+        ///     The distribution keeps its own copy of a value-type generator.
+        /// - Returns: A new uncertain location value.
+        public static func location(
+            coordinate: CLLocationCoordinate2D,
+            horizontalAccuracy: CLLocationAccuracy,
+            verticalAccuracy: CLLocationAccuracy = -1,
+            altitude: CLLocationDistance = 0,
+            using generator: some RandomNumberGenerator & Sendable
+        ) -> Uncertain<CLLocation> {
             let baseLocation = CLLocation(
                 coordinate: coordinate,
                 altitude: altitude,
@@ -1156,7 +1383,7 @@ extension Uncertain where T == Bool {
                 verticalAccuracy: verticalAccuracy,
                 timestamp: Date()
             )
-            return from(baseLocation)
+            return from(baseLocation, using: generator)
         }
 
         /// Calculates the distance between two uncertain locations.
@@ -1251,28 +1478,26 @@ extension Uncertain where T == Bool {
             _ coordinate: CLLocationCoordinate2D,
             accuracy: CLLocationAccuracy
         ) -> Uncertain<CLLocationCoordinate2D> {
+            self.coordinate(coordinate, accuracy: accuracy, using: SystemRandomNumberGenerator())
+        }
+
+        /// Creates an uncertain coordinate from a CLLocationCoordinate2D with accuracy,
+        /// using the given generator.
+        ///
+        /// - Parameters:
+        ///   - coordinate: The GPS coordinate.
+        ///   - accuracy: The GPS accuracy in meters (used as scale parameter for Rayleigh distribution).
+        ///   - generator: The random number generator to draw from.
+        ///     The distribution keeps its own copy of a value-type generator.
+        /// - Returns: A new uncertain coordinate value.
+        public static func coordinate(
+            _ coordinate: CLLocationCoordinate2D,
+            accuracy: CLLocationAccuracy,
+            using generator: some RandomNumberGenerator & Sendable
+        ) -> Uncertain<CLLocationCoordinate2D> {
+            let shared = SharedGenerator(generator)
             return Uncertain<CLLocationCoordinate2D> {
-                let earthRadius = 6_371_000.0  // meters
-                let lat1 = coordinate.latitude * .pi / 180
-
-                // Use Rayleigh distribution for radial distance from true location
-                let radialDistance = Uncertain<Double>.rayleigh(scale: accuracy).sample()
-
-                // Generate random direction (angle) uniformly
-                let angle = Double.random(in: 0 ... (2 * .pi))
-
-                // Convert polar coordinates to Cartesian offsets
-                let northOffset = radialDistance * cos(angle)
-                let eastOffset = radialDistance * sin(angle)
-
-                // Convert meter offsets to lat/lon
-                let latOffset = northOffset / earthRadius * 180 / .pi
-                let lonOffset = eastOffset / (earthRadius * cos(lat1)) * 180 / .pi
-
-                return CLLocationCoordinate2D(
-                    latitude: coordinate.latitude + latOffset,
-                    longitude: coordinate.longitude + lonOffset
-                )
+                shared.withGenerator { displacedCoordinate(coordinate, scale: accuracy, using: &$0) }
             }
         }
 
@@ -1400,6 +1625,31 @@ extension Uncertain where T == Bool {
             speedUncertaintyFactor: Double = 0.1,
             minimumSpeedUncertainty: Double = 0.1
         ) -> Uncertain<CLLocationSpeed> {
+            speed(
+                from: location,
+                speedUncertaintyFactor: speedUncertaintyFactor,
+                minimumSpeedUncertainty: minimumSpeedUncertainty,
+                using: SystemRandomNumberGenerator()
+            )
+        }
+
+        /// Creates an uncertain speed from a CLLocation with speed uncertainty,
+        /// using the given generator.
+        ///
+        /// - Parameters:
+        ///   - location: The CLLocation with speed and course information.
+        ///   - speedUncertaintyFactor: Factor to estimate speed uncertainty from horizontal accuracy (default: 0.1).
+        ///   - minimumSpeedUncertainty: Minimum speed uncertainty in m/s (default: 0.1).
+        ///   - generator: The random number generator to draw from.
+        ///     The distribution keeps its own copy of a value-type generator.
+        /// - Returns: A new uncertain speed value in m/s.
+        public static func speed(
+            from location: CLLocation,
+            speedUncertaintyFactor: Double = 0.1,
+            minimumSpeedUncertainty: Double = 0.1,
+            using generator: some RandomNumberGenerator & Sendable
+        ) -> Uncertain<CLLocationSpeed> {
+            let shared = SharedGenerator(generator)
             return Uncertain<CLLocationSpeed> {
                 let baseSpeed = location.speed
 
@@ -1414,13 +1664,11 @@ extension Uncertain where T == Bool {
                     minimumSpeedUncertainty,
                     location.horizontalAccuracy * speedUncertaintyFactor
                 )
-                let uncertainSpeed = Swift.max(
-                    0,
-                    Uncertain<Double>.normal(mean: baseSpeed, standardDeviation: speedUncertainty)
-                        .sample()
-                )
+                let uncertainSpeed = shared.withGenerator { generator in
+                    sampleNormal(mean: baseSpeed, standardDeviation: speedUncertainty, using: &generator)
+                }
 
-                return uncertainSpeed
+                return Swift.max(0, uncertainSpeed)
             }
         }
 
@@ -1455,27 +1703,35 @@ extension Uncertain where T == Bool {
         /// - Parameter location: The CLLocation with course and courseAccuracy information.
         /// - Returns: A new uncertain course value in degrees.
         public static func course(from location: CLLocation) -> Uncertain<CLLocationDirection> {
+            course(from: location, using: SystemRandomNumberGenerator())
+        }
+
+        /// Creates an uncertain course/heading from a CLLocation,
+        /// using the given generator.
+        ///
+        /// Models course uncertainty using the location's built-in courseAccuracy value.
+        /// If the location has negative course or courseAccuracy
+        /// (indicating invalid readings),
+        /// the course is returned unchanged.
+        ///
+        /// - Parameters:
+        ///   - location: The CLLocation with course and courseAccuracy information.
+        ///   - generator: The random number generator to draw from.
+        ///     The distribution keeps its own copy of a value-type generator.
+        /// - Returns: A new uncertain course value in degrees.
+        public static func course(
+            from location: CLLocation,
+            using generator: some RandomNumberGenerator & Sendable
+        ) -> Uncertain<CLLocationDirection> {
+            let shared = SharedGenerator(generator)
             return Uncertain<CLLocationDirection> {
-                let baseCourse = location.course
-                let courseAccuracy = location.courseAccuracy
-
                 // If course or courseAccuracy is negative, the reading is invalid
-                guard baseCourse >= 0, courseAccuracy >= 0 else {
-                    return baseCourse
+                guard location.course >= 0, location.courseAccuracy >= 0 else {
+                    return location.course
                 }
-
-                // Model course uncertainty using the location's courseAccuracy
-                let uncertainCourse = Uncertain<Double>.normal(
-                    mean: baseCourse,
-                    standardDeviation: courseAccuracy
-                ).sample()
-
-                // Normalize to 0-360 degrees
-                var normalizedCourse = uncertainCourse.truncatingRemainder(dividingBy: 360)
-                if normalizedCourse < 0 {
-                    normalizedCourse += 360
+                return shared.withGenerator { generator in
+                    sampleCourse(location.course, accuracy: location.courseAccuracy, using: &generator)
                 }
-                return normalizedCourse
             }
         }
 
@@ -1492,28 +1748,37 @@ extension Uncertain where T == Bool {
             from location: CLLocation,
             courseAccuracy: CLLocationAccuracy
         ) -> Uncertain<CLLocationDirection> {
+            course(from: location, courseAccuracy: courseAccuracy, using: SystemRandomNumberGenerator())
+        }
+
+        /// Creates an uncertain course/heading from a CLLocation with custom accuracy,
+        /// using the given generator.
+        ///
+        /// This overload allows you to specify custom uncertainty values,
+        /// overriding the location's built-in courseAccuracy measurement.
+        ///
+        /// - Parameters:
+        ///   - location: The CLLocation with course information.
+        ///   - courseAccuracy: Custom course accuracy in degrees (must be >= 0).
+        ///   - generator: The random number generator to draw from.
+        ///     The distribution keeps its own copy of a value-type generator.
+        /// - Returns: A new uncertain course value in degrees.
+        public static func course(
+            from location: CLLocation,
+            courseAccuracy: CLLocationAccuracy,
+            using generator: some RandomNumberGenerator & Sendable
+        ) -> Uncertain<CLLocationDirection> {
             precondition(courseAccuracy >= 0, "Course accuracy must be non-negative")
 
+            let shared = SharedGenerator(generator)
             return Uncertain<CLLocationDirection> {
-                let baseCourse = location.course
-
                 // If course is negative, it's invalid
-                guard baseCourse >= 0 else {
-                    return baseCourse
+                guard location.course >= 0 else {
+                    return location.course
                 }
-
-                // Model course uncertainty with the specified accuracy
-                let uncertainCourse = Uncertain<Double>.normal(
-                    mean: baseCourse,
-                    standardDeviation: courseAccuracy
-                ).sample()
-
-                // Normalize to 0-360 degrees
-                var normalizedCourse = uncertainCourse.truncatingRemainder(dividingBy: 360)
-                if normalizedCourse < 0 {
-                    normalizedCourse += 360
+                return shared.withGenerator { generator in
+                    sampleCourse(location.course, accuracy: courseAccuracy, using: &generator)
                 }
-                return normalizedCourse
             }
         }
 
@@ -1577,6 +1842,86 @@ extension Uncertain where T == Bool {
             let diff = self.angularDifference(to: direction)
             return diff.map { abs($0) <= tolerance }
         }
+    }
+
+    /// Returns a coordinate moved in a uniformly random direction
+    /// by a Rayleigh-distributed distance with the given scale in meters.
+    private func displacedCoordinate(
+        _ coordinate: CLLocationCoordinate2D,
+        scale: Double,
+        using generator: inout some RandomNumberGenerator
+    ) -> CLLocationCoordinate2D {
+        let earthRadius = 6_371_000.0  // meters
+        let lat = coordinate.latitude * .pi / 180
+
+        // Generate radial distance using Rayleigh distribution
+        let radialDistance = sampleRayleigh(scale: scale, using: &generator)
+
+        // Generate random direction (angle) uniformly
+        let angle = Double.random(in: 0 ... (2 * .pi), using: &generator)
+
+        // Convert polar coordinates to Cartesian offsets
+        let northOffset = radialDistance * cos(angle)
+        let eastOffset = radialDistance * sin(angle)
+
+        // Convert meter offsets to lat/lon
+        let latOffset = northOffset / earthRadius * 180 / .pi
+        let lonOffset = eastOffset / (earthRadius * cos(lat)) * 180 / .pi
+
+        return CLLocationCoordinate2D(
+            latitude: coordinate.latitude + latOffset,
+            longitude: coordinate.longitude + lonOffset
+        )
+    }
+
+    /// Returns a location with a displaced coordinate and,
+    /// if the vertical accuracy is non-negative, a normally distributed altitude.
+    private func displacedLocation(
+        _ location: CLLocation,
+        horizontalAccuracy: CLLocationAccuracy,
+        verticalAccuracy: CLLocationAccuracy,
+        using generator: inout some RandomNumberGenerator
+    ) -> CLLocation {
+        // horizontalAccuracy represents the standard deviation of GPS error
+        let uncertainCoordinate = displacedCoordinate(
+            location.coordinate,
+            scale: horizontalAccuracy,
+            using: &generator
+        )
+
+        // Model altitude uncertainty if available
+        let uncertainAltitude: Double
+        if verticalAccuracy >= 0 {
+            uncertainAltitude =
+                location.altitude
+                + sampleNormal(mean: 0, standardDeviation: verticalAccuracy, using: &generator)
+        } else {
+            uncertainAltitude = location.altitude
+        }
+
+        return CLLocation(
+            coordinate: uncertainCoordinate,
+            altitude: uncertainAltitude,
+            horizontalAccuracy: horizontalAccuracy,
+            verticalAccuracy: verticalAccuracy,
+            timestamp: location.timestamp
+        )
+    }
+
+    /// Returns a normally distributed course in degrees, normalized to 0-360.
+    private func sampleCourse(
+        _ course: CLLocationDirection,
+        accuracy: CLLocationAccuracy,
+        using generator: inout some RandomNumberGenerator
+    ) -> CLLocationDirection {
+        let uncertainCourse = sampleNormal(mean: course, standardDeviation: accuracy, using: &generator)
+
+        // Normalize to 0-360 degrees
+        var normalizedCourse = uncertainCourse.truncatingRemainder(dividingBy: 360)
+        if normalizedCourse < 0 {
+            normalizedCourse += 360
+        }
+        return normalizedCourse
     }
 #endif
 
@@ -1676,4 +2021,57 @@ internal indirect enum EqualityNode<T>: Sendable where T: Sendable & Equatable {
         var context = SampleContext()
         return evaluate(in: &context)
     }
+}
+
+// MARK: - Random Number Generation
+
+/// A box that lets a `Sendable` sampling closure draw from a generator.
+///
+/// The box holds a lock for one whole sample,
+/// so concurrent samples run one at a time
+/// and each sample reads a contiguous run of the generator's stream.
+/// `SystemRandomNumberGenerator` has no state,
+/// so the box gives each sample its own copy without a lock.
+internal final class SharedGenerator<G>: @unchecked Sendable
+where G: RandomNumberGenerator & Sendable {
+    private var generator: G
+    // `nil` when the generator has no state to protect
+    private let lock: NSLock?
+
+    init(_ generator: G) {
+        self.generator = generator
+        self.lock = G.self == SystemRandomNumberGenerator.self ? nil : NSLock()
+    }
+
+    /// Calls the closure with exclusive access to the generator.
+    func withGenerator<R>(_ body: (inout G) -> R) -> R {
+        guard let lock else {
+            // The stored generator is never written in this case, so reading it without a lock is safe
+            var copy = generator
+            return body(&copy)
+        }
+        lock.lock()
+        defer { lock.unlock() }
+        return body(&generator)
+    }
+}
+
+/// Returns a sample from a normal distribution, using the Box-Muller transform.
+internal func sampleNormal(
+    mean: Double,
+    standardDeviation: Double,
+    using generator: inout some RandomNumberGenerator
+) -> Double {
+    let u1 = Double.random(in: Double.ulpOfOne ..< 1.0, using: &generator)  // Avoid log(0)
+    let u2 = Double.random(in: 0.0 ..< 1.0, using: &generator)
+    let z0 = sqrt(-2.0 * log(u1)) * cos(2.0 * Double.pi * u2)
+    return mean + standardDeviation * z0
+}
+
+/// Returns a sample from a Rayleigh distribution, using inverse transform sampling.
+internal func sampleRayleigh(scale: Double, using generator: inout some RandomNumberGenerator) -> Double {
+    precondition(scale > 0, "Rayleigh distribution scale parameter must be positive")
+    // F^(-1)(u) = scale * sqrt(-2 * ln(1-u))
+    let u = Double.random(in: Double.ulpOfOne ..< 1.0, using: &generator)  // Avoid exactly 0 or 1
+    return scale * sqrt(-2.0 * log(1.0 - u))
 }
