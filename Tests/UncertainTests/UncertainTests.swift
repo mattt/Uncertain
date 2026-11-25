@@ -3,6 +3,35 @@ import Testing
 
 @testable import Uncertain
 
+/// A seeded SplitMix64 generator that sampling closures can share,
+/// so that tests of statistical decisions draw the same samples on every run.
+final class SplitMix64: @unchecked Sendable {
+    private var state: UInt64
+    private let lock = NSLock()
+
+    init(seed: UInt64) {
+        state = seed
+    }
+
+    /// Returns a uniformly distributed value in `0..<1`.
+    func nextUnitDouble() -> Double {
+        lock.lock()
+        defer { lock.unlock() }
+        state &+= 0x9E37_79B9_7F4A_7C15
+        var z = state
+        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+        z ^= z >> 31
+        return Double(z >> 11) * 0x1p-53
+    }
+}
+
+/// Returns a Bernoulli distribution with a fixed seed.
+func seededCoin(probability: Double, seed: UInt64) -> Uncertain<Bool> {
+    let generator = SplitMix64(seed: seed)
+    return Uncertain<Bool> { generator.nextUnitDouble() < probability }
+}
+
 @Suite("Paper-Faithful Uncertain<T> Tests")
 struct UncertainTests {
 
@@ -183,8 +212,9 @@ struct UncertainTests {
 
     @Test("Hypothesis testing with different confidence levels")
     func testHypothesisTestingConfidenceLevels() {
-        // Create a distribution where we know the true probability
-        let biasedCoin = Uncertain<Bool> { Double.random(in: 0...1) < 0.7 }
+        // Create a distribution where we know the true probability.
+        // A fixed seed keeps the decisions the same on every run.
+        let biasedCoin = seededCoin(probability: 0.7, seed: 1)
 
         // Test different confidence levels
         let highConfidence = biasedCoin.probability(exceeds: 0.6, confidenceLevel: 0.95)
@@ -485,8 +515,9 @@ struct UncertainTests {
 
     @Test("Improved SPRT with configurable parameters")
     func testImprovedSPRTWithConfigurableParameters() {
-        // Create a distribution with known probability
-        let biasedCoin = Uncertain<Bool> { Double.random(in: 0...1) < 0.7 }
+        // Create a distribution with known probability.
+        // A fixed seed keeps the decisions the same on every run.
+        let biasedCoin = seededCoin(probability: 0.7, seed: 1)
 
         // Test with different batch sizes
         let result1 = biasedCoin.evaluateHypothesis(
