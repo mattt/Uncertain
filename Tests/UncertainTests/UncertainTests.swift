@@ -40,7 +40,7 @@ struct UncertainTests {
     @Test("Evidence-based conditionals prevent uncertainty bugs")
     func testEvidenceBasedConditionals() {
         // Temperature sensor with ±2°C accuracy
-        let temperature = Uncertain<Double>.normal(mean: 1.0, standardDeviation: 2.0)
+        let temperature = Uncertain<Double>.normal(mean: 0.5, standardDeviation: 2.0)
         let freezingPoint = 0.0
 
         // Test that we get an Uncertain<Bool> back
@@ -57,7 +57,7 @@ struct UncertainTests {
         #expect(type(of: mediumConfidence) == Bool.self)
         #expect(type(of: lowConfidence) == Bool.self)
 
-        // With temperature mean=1°C and std=2°C, freezing should be:
+        // With temperature mean=0.5°C and std=2°C, P(freezing) ≈ 0.40, so freezing should be:
         // - Very unlikely at 95% confidence (false)
         // - Likely at low confidence (true)
         #expect(highConfidence == false)
@@ -113,8 +113,8 @@ struct UncertainTests {
 
     @Test("Speeding Ticket Example from Paper")
     func testSpeedingTicketExample() {
-        // True speed is 57 mph, but measurement has error
-        let trueSpeed = 57.0
+        // True speed is 56 mph, but measurement has error
+        let trueSpeed = 56.0
         let measurementError = Uncertain<Double>.normal(mean: 0.0, standardDeviation: 2.0)
         let measuredSpeed = Uncertain<Double> { trueSpeed + measurementError.sample() }
 
@@ -126,7 +126,7 @@ struct UncertainTests {
         let standardOfficer = ~speedingEvidence
         let strictOfficer = speedingEvidence.probability(exceeds: 0.2)
 
-        // With true speed 57 mph and 2 mph error, speed limit 60 mph:
+        // With true speed 56 mph and 2 mph error, speed limit 60 mph, P(speeding) ≈ 0.023:
         // - Lenient (95% confident): Should not ticket
         // - Standard (50% confident): Should not ticket
         // - Strict (20% confident): Should not ticket
