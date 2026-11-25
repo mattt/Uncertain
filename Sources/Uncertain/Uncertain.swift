@@ -494,18 +494,79 @@ extension Uncertain where T: FixedWidthInteger {
 
     /// Creates a Poisson distribution for any integer type.
     ///
-    /// - Parameter lambda: The rate parameter.
+    /// For `lambda` less than 10, each sample uses Knuth's multiplication method.
+    /// For larger `lambda`, each sample uses Hörmann's transformed rejection method (PTRS),
+    /// which takes constant expected time.
+    ///
+    /// A `lambda` of 0 always gives 0.
+    ///
+    /// - Parameter lambda: The rate parameter, which is the mean of the distribution.
     /// - Returns: A new uncertain value with a Poisson distribution.
+    /// - Precondition: `lambda` is finite and not negative.
+    ///   Sampling traps if a sample is larger than `T.max`.
     public static func poisson(lambda: Double) -> Uncertain<T> {
-        Uncertain<T> {
-            let L = exp(-lambda)
-            var k: T = 0
-            var p = 1.0
-            repeat {
-                k += 1
-                p *= Double.random(in: 0 ... 1)
-            } while p > L
-            return k - 1
+        precondition(
+            lambda.isFinite && lambda >= 0,
+            "lambda must be finite and not negative"
+        )
+        return Uncertain<T> {
+            let count =
+                lambda < 10
+                ? poissonByMultiplication(lambda: lambda)
+                : poissonByTransformedRejection(lambda: lambda)
+            guard let value = T(exactly: count) else {
+                preconditionFailure("Poisson sample \(count) is larger than \(T.self).max")
+            }
+            return value
+        }
+    }
+}
+
+/// Returns a Poisson sample by Knuth's method,
+/// which multiplies uniform values until the product is not more than `exp(-lambda)`.
+///
+/// The expected number of iterations is `lambda + 1`,
+/// and `exp(-lambda)` underflows for `lambda` above about 745,
+/// so use this function only for small `lambda`.
+private func poissonByMultiplication(lambda: Double) -> Double {
+    let limit = exp(-lambda)
+    var count = 0.0
+    var product = Double.random(in: 0 ... 1)
+    while product > limit {
+        count += 1
+        product *= Double.random(in: 0 ... 1)
+    }
+    return count
+}
+
+/// Returns a Poisson sample by the transformed rejection method with squeeze (PTRS)
+/// from Hörmann, "The transformed rejection method for generating Poisson random variables,"
+/// Insurance: Mathematics and Economics 12 (1993).
+///
+/// The method is exact for `lambda` of 10 or more,
+/// and the expected number of iterations is less than 1.2 for all such `lambda`.
+private func poissonByTransformedRejection(lambda: Double) -> Double {
+    let logLambda = log(lambda)
+    let b = 0.931 + 2.53 * lambda.squareRoot()
+    let a = -0.059 + 0.02483 * b
+    let logInverseAlpha = log(1.1239 + 1.1328 / (b - 3.4))
+    let vR = 0.9277 - 3.6224 / (b - 2)
+
+    while true {
+        let u = Double.random(in: 0 ..< 1) - 0.5
+        let v = Double.random(in: 0 ..< 1)
+        let us = 0.5 - abs(u)
+        let k = ((2 * a / us + b) * u + lambda + 0.43).rounded(.down)
+
+        // Accept most samples without the log-gamma function.
+        if us >= 0.07 && v <= vR {
+            return k
+        }
+        if k < 0 || (us < 0.013 && v > us) {
+            continue
+        }
+        if log(v) + logInverseAlpha - log(a / (us * us) + b) <= -lambda + k * logLambda - lgamma(k + 1) {
+            return k
         }
     }
 }
