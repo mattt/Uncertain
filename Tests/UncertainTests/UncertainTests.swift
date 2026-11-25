@@ -574,6 +574,97 @@ struct UncertainTests {
         #expect(tightEpsilon.samplesUsed >= looseEpsilon.samplesUsed)
     }
 
+    /// Parameters for one SPRT error-rate case.
+    struct SPRTErrorRateCase: Sendable, CustomTestStringConvertible {
+        var confidenceLevel: Double
+        var alpha: Double?
+        var beta: Double?
+
+        /// The type I error rate that `evaluateHypothesis` targets.
+        var nominalAlpha: Double { alpha ?? (1.0 - confidenceLevel) }
+        /// The type II error rate that `evaluateHypothesis` targets.
+        var nominalBeta: Double { beta ?? nominalAlpha }
+
+        var testDescription: String {
+            if let alpha, let beta {
+                return "alpha: \(alpha), beta: \(beta)"
+            }
+            return "confidenceLevel: \(confidenceLevel)"
+        }
+    }
+
+    // Measured with the seeds below (2,000 runs for each hypothesis, maxSamples 1,000):
+    //
+    // | Case                  | Type I rate (alpha) | Type II rate (beta) |
+    // | --------------------- | ------------------- | ------------------- |
+    // | confidenceLevel 0.90  | 0.0715 (0.10)       | 0.0655 (0.10)       |
+    // | confidenceLevel 0.95  | 0.0350 (0.05)       | 0.0335 (0.05)       |
+    // | alpha 0.01, beta 0.10 | 0.0105 (0.01)       | 0.0695 (0.10)       |
+    //
+    // All rates but one are below their bounds, by 0.015 to 0.035,
+    // because each batch of 10 samples overshoots the SPRT boundary,
+    // which makes the test more conservative than Wald's approximation.
+    // The type I rate for alpha 0.01 is 0.0005 above alpha;
+    // it is still below Wald's bound of alpha / (1 - beta) ≈ 0.0111.
+    // The fallback decision at maxSamples occurred in 2 of the 12,000 runs.
+    @Test(
+        "SPRT error rates stay near alpha and beta",
+        arguments: [
+            SPRTErrorRateCase(confidenceLevel: 0.90),
+            SPRTErrorRateCase(confidenceLevel: 0.95),
+            SPRTErrorRateCase(confidenceLevel: 0.95, alpha: 0.01, beta: 0.10),
+        ]
+    )
+    func testSPRTErrorRates(_ testCase: SPRTErrorRateCase) {
+        let threshold = 0.5
+        let epsilon = 0.05
+        let runs = 2000
+
+        var falsePositives = 0
+        var falseNegatives = 0
+        for run in 0 ..< runs {
+            // Each run uses its own seed, and the two hypotheses use separate seed ranges.
+            let atNull = seededCoin(probability: threshold - epsilon, seed: UInt64(run))
+            let atAlternative = seededCoin(probability: threshold + epsilon, seed: UInt64(runs + run))
+
+            if atNull.evaluateHypothesis(
+                threshold: threshold,
+                confidenceLevel: testCase.confidenceLevel,
+                maxSamples: 1000,
+                epsilon: epsilon,
+                alpha: testCase.alpha,
+                beta: testCase.beta
+            ).decision {
+                falsePositives += 1
+            }
+            if !atAlternative.evaluateHypothesis(
+                threshold: threshold,
+                confidenceLevel: testCase.confidenceLevel,
+                maxSamples: 1000,
+                epsilon: epsilon,
+                alpha: testCase.alpha,
+                beta: testCase.beta
+            ).decision {
+                falseNegatives += 1
+            }
+        }
+
+        // The tolerance is three standard errors of a binomial rate at the nominal value
+        // over `runs` trials: about 0.020 for 0.10, 0.015 for 0.05, and 0.0067 for 0.01.
+        // The seeds make the result deterministic, so this margin does not guard against chance.
+        // It allows a change to the sampling or batching that moves the rates
+        // by an amount that a correct SPRT could also show,
+        // and it fails when a rate is well above its target.
+        func tolerance(_ rate: Double) -> Double {
+            3 * (rate * (1 - rate) / Double(runs)).squareRoot()
+        }
+
+        let typeIRate = Double(falsePositives) / Double(runs)
+        let typeIIRate = Double(falseNegatives) / Double(runs)
+        #expect(typeIRate <= testCase.nominalAlpha + tolerance(testCase.nominalAlpha))
+        #expect(typeIIRate <= testCase.nominalBeta + tolerance(testCase.nominalBeta))
+    }
+
     @Test("Complex shared variable expressions")
     func testComplexSharedVariableExpressions() {
         // Test complex expressions with shared variables
