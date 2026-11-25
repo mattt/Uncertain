@@ -403,6 +403,10 @@ give each one a different seed.
 
 Samples are reproducible when you draw them in the same order on every run.
 Concurrent sampling is safe, but the order of the draws can change between runs.
+`SplitMix64` gives the same sequence on every platform,
+but the samples that a distribution makes from it can differ
+between platforms and Swift versions,
+because they depend on floating-point math functions such as `log` and `cos`.
 
 ### Statistical Operations
 
