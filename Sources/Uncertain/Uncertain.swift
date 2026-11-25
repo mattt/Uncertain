@@ -529,7 +529,7 @@ extension Uncertain where T: Hashable {
         return Uncertain<T> {
             // A half-open range and a strict comparison never select a value with zero probability
             let r = shared.withGenerator { Double.random(in: 0 ..< 1, using: &$0) }
-            // Defensive: fallback to last element if none found (should not happen if cumulative is non-empty)
+            // Fall back to the last value when floating-point rounding leaves the total below 1
             return cumulative.first(where: { r < $0.1 })?.0 ?? cumulative.last!.0
         }
     }
@@ -784,7 +784,8 @@ extension Uncertain where T == Double {
             shared.withGenerator { generator in
                 // Generate exponential using inverse transform sampling
                 // F^(-1)(u) = -ln(1-u) / rate
-                let u = Double.random(in: Double.ulpOfOne ..< 1.0, using: &generator)  // Avoid log(0)
+                // The half-open upper bound prevents log(0); the lower bound keeps the sample above 0
+                let u = Double.random(in: Double.ulpOfOne ..< 1.0, using: &generator)
                 return -log(1.0 - u) / rate
             }
         }
