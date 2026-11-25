@@ -543,8 +543,9 @@ private func poissonByMultiplication(lambda: Double) -> Double {
 /// from Hörmann, "The transformed rejection method for generating Poisson random variables,"
 /// Insurance: Mathematics and Economics 12 (1993).
 ///
-/// The method is exact for `lambda` of 10 or more,
-/// and the expected number of iterations is less than 1.2 for all such `lambda`.
+/// The method is exact for `lambda` of 10 or more, up to floating-point precision.
+/// The expected number of iterations is about 1.33 at `lambda` 10
+/// and falls toward 1.124 as `lambda` grows.
 private func poissonByTransformedRejection(lambda: Double) -> Double {
     let logLambda = log(lambda)
     let b = 0.931 + 2.53 * lambda.squareRoot()
