@@ -429,9 +429,12 @@ extension Uncertain {
         let cumulative = normalized.reduce(into: [Double]()) { acc, weight in
             acc.append((acc.last ?? 0) + weight)
         }
+        // If rounding leaves the last cumulative weight below 1, fall back to the last component with weight
+        let fallback = normalized.lastIndex(where: { $0 > 0 }) ?? (components.count - 1)
         return Uncertain<T> {
-            let r = Double.random(in: 0 ... 1)
-            let idx = cumulative.firstIndex(where: { r <= $0 }) ?? (components.count - 1)
+            // A half-open range and a strict comparison never select a component with zero weight
+            let r = Double.random(in: 0 ..< 1)
+            let idx = cumulative.firstIndex(where: { r < $0 }) ?? fallback
             return components[idx].sample()
         }
     }
@@ -461,9 +464,10 @@ extension Uncertain where T: Hashable {
             acc.append((pair.key, sum))
         }
         return Uncertain<T> {
-            let r = Double.random(in: 0 ... 1)
+            // A half-open range and a strict comparison never select a value with zero probability
+            let r = Double.random(in: 0 ..< 1)
             // Defensive: fallback to last element if none found (should not happen if cumulative is non-empty)
-            return cumulative.first(where: { r <= $0.1 })?.0 ?? cumulative.last!.0
+            return cumulative.first(where: { r < $0.1 })?.0 ?? cumulative.last!.0
         }
     }
 }
@@ -480,7 +484,7 @@ extension Uncertain where T: FixedWidthInteger {
         Uncertain<T> {
             var count: T = 0
             for _ in 0 ..< trials {
-                if Double.random(in: 0 ... 1) < probability {
+                if Double.random(in: 0 ..< 1) < probability {
                     count += 1
                 }
             }
@@ -556,7 +560,7 @@ extension Uncertain where T == Double {
     /// - Parameter probability: The probability of success.
     /// - Returns: A new uncertain boolean value.
     public static func bernoulli(probability: Double) -> Uncertain<Bool> {
-        Uncertain<Bool> { Double.random(in: 0 ... 1) < probability }
+        Uncertain<Bool> { Double.random(in: 0 ..< 1) < probability }
     }
 
     /// Creates a Kumaraswamy distribution.
