@@ -417,7 +417,9 @@ extension Uncertain {
         let w: [Double]
         if let weights = weights {
             precondition(
-                components.count == weights.count, "Weights count must match components count")
+                components.count == weights.count,
+                "Weights count must match components count"
+            )
             w = weights
         } else {
             w = Array(repeating: 1.0, count: components.count)
@@ -428,7 +430,7 @@ extension Uncertain {
             acc.append((acc.last ?? 0) + weight)
         }
         return Uncertain<T> {
-            let r = Double.random(in: 0...1)
+            let r = Double.random(in: 0 ... 1)
             let idx = cumulative.firstIndex(where: { r <= $0 }) ?? (components.count - 1)
             return components[idx].sample()
         }
@@ -459,7 +461,7 @@ extension Uncertain where T: Hashable {
             acc.append((pair.key, sum))
         }
         return Uncertain<T> {
-            let r = Double.random(in: 0...1)
+            let r = Double.random(in: 0 ... 1)
             // Defensive: fallback to last element if none found (should not happen if cumulative is non-empty)
             return cumulative.first(where: { r <= $0.1 })?.0 ?? cumulative.last!.0
         }
@@ -477,8 +479,8 @@ extension Uncertain where T: FixedWidthInteger {
     public static func binomial(trials: T, probability: Double) -> Uncertain<T> {
         Uncertain<T> {
             var count: T = 0
-            for _ in 0..<trials {
-                if Double.random(in: 0...1) < probability {
+            for _ in 0 ..< trials {
+                if Double.random(in: 0 ... 1) < probability {
                     count += 1
                 }
             }
@@ -497,7 +499,7 @@ extension Uncertain where T: FixedWidthInteger {
             var p = 1.0
             repeat {
                 k += 1
-                p *= Double.random(in: 0...1)
+                p *= Double.random(in: 0 ... 1)
             } while p > L
             return k - 1
         }
@@ -517,8 +519,8 @@ extension Uncertain where T == Double {
     ) -> Uncertain<Double> {
         return Uncertain<Double> {
             // Box-Muller transform for normal distribution
-            let u1 = Double.random(in: 0.001...0.999)  // Avoid exactly 0 or 1
-            let u2 = Double.random(in: 0.001...0.999)
+            let u1 = Double.random(in: 0.001 ... 0.999)  // Avoid exactly 0 or 1
+            let u2 = Double.random(in: 0.001 ... 0.999)
             let z0 = sqrt(-2.0 * log(u1)) * cos(2.0 * Double.pi * u2)
             return mean + standardDeviation * z0
         }
@@ -532,7 +534,7 @@ extension Uncertain where T == Double {
     /// - Returns: A new uncertain value with a uniform distribution.
     public static func uniform(min: Double, max: Double) -> Uncertain<Double> {
         return Uncertain<Double> {
-            Double.random(in: min...max)
+            Double.random(in: min ... max)
         }
     }
 
@@ -542,7 +544,7 @@ extension Uncertain where T == Double {
     /// - Returns: A new uncertain value with an exponential distribution.
     public static func exponential(rate: Double) -> Uncertain<Double> {
         return Uncertain<Double> {
-            -log(Double.random(in: 0.0...1.0)) / rate
+            -log(Double.random(in: 0.0 ... 1.0)) / rate
         }
     }
 
@@ -551,7 +553,7 @@ extension Uncertain where T == Double {
     /// - Parameter probability: The probability of success.
     /// - Returns: A new uncertain boolean value.
     public static func bernoulli(probability: Double) -> Uncertain<Bool> {
-        Uncertain<Bool> { Double.random(in: 0...1) < probability }
+        Uncertain<Bool> { Double.random(in: 0 ... 1) < probability }
     }
 
     /// Creates a Kumaraswamy distribution.
@@ -569,7 +571,7 @@ extension Uncertain where T == Double {
 
         return Uncertain<Double> {
             // Generate Kumaraswamy using inverse transform sampling
-            let u = Double.random(in: Double.ulpOfOne..<1.0)  // Avoid exactly 0 or 1
+            let u = Double.random(in: Double.ulpOfOne ..< 1.0)  // Avoid exactly 0 or 1
             return pow(1.0 - pow(1.0 - u, reciprocalB), reciprocalA)
         }
     }
@@ -587,7 +589,7 @@ extension Uncertain where T == Double {
         return Uncertain<Double> {
             // Generate Rayleigh using inverse transform sampling
             // F^(-1)(u) = scale * sqrt(-2 * ln(1-u))
-            let u = Double.random(in: Double.ulpOfOne..<1.0)  // Avoid exactly 0 or 1
+            let u = Double.random(in: Double.ulpOfOne ..< 1.0)  // Avoid exactly 0 or 1
             return scale * sqrt(-2.0 * log(1.0 - u))
         }
     }
@@ -799,7 +801,7 @@ private func partition<T: Comparable>(_ array: inout [T], left: Int, right: Int)
     let pivot = array[right]
     var i = left
 
-    for j in left..<right {
+    for j in left ..< right {
         if array[j] <= pivot {
             array.swapAt(i, j)
             i += 1
@@ -870,7 +872,7 @@ extension Uncertain where T == Bool {
             var batchSuccesses = 0
             let currentBatchSize = Swift.min(batchSize, maxSamples - samples)
 
-            for _ in 0..<currentBatchSize {
+            for _ in 0 ..< currentBatchSize {
                 if self.sample() {
                     batchSuccesses += 1
                 }
@@ -958,7 +960,7 @@ extension Uncertain where T == Bool {
                 ).sample()
 
                 // Generate random direction (angle) uniformly
-                let angle = Double.random(in: 0...(2 * .pi))
+                let angle = Double.random(in: 0 ... (2 * .pi))
 
                 // Convert polar coordinates to Cartesian offsets
                 let northOffset = radialDistance * cos(angle)
@@ -1028,7 +1030,7 @@ extension Uncertain where T == Bool {
                 ).sample()
 
                 // Generate random direction (angle) uniformly
-                let angle = Double.random(in: 0...(2 * .pi))
+                let angle = Double.random(in: 0 ... (2 * .pi))
 
                 // Convert polar coordinates to Cartesian offsets
                 let northOffset = radialDistance * cos(angle)
@@ -1188,7 +1190,7 @@ extension Uncertain where T == Bool {
                 let radialDistance = Uncertain<Double>.rayleigh(scale: accuracy).sample()
 
                 // Generate random direction (angle) uniformly
-                let angle = Double.random(in: 0...(2 * .pi))
+                let angle = Double.random(in: 0 ... (2 * .pi))
 
                 // Convert polar coordinates to Cartesian offsets
                 let northOffset = radialDistance * cos(angle)
@@ -1269,13 +1271,14 @@ extension Uncertain where T == Bool {
         ///
         /// - Parameter coordinate: The destination coordinate.
         /// - Returns: An uncertain distance value in meters.
-        public func distance(to coordinate: CLLocationCoordinate2D) -> Uncertain<CLLocationDistance>
-        {
+        public func distance(to coordinate: CLLocationCoordinate2D) -> Uncertain<CLLocationDistance> {
             return Uncertain<CLLocationDistance> {
                 let coord1 = self.sample()
                 let loc1 = CLLocation(latitude: coord1.latitude, longitude: coord1.longitude)
                 let loc2 = CLLocation(
-                    latitude: coordinate.latitude, longitude: coordinate.longitude)
+                    latitude: coordinate.latitude,
+                    longitude: coordinate.longitude
+                )
                 return loc1.distance(from: loc2)
             }
         }
@@ -1339,7 +1342,9 @@ extension Uncertain where T == Bool {
                 // Model speed uncertainty (Core Location doesn't provide direct speed accuracy)
                 // Use configurable estimate based on location accuracy
                 let speedUncertainty = Swift.max(
-                    minimumSpeedUncertainty, location.horizontalAccuracy * speedUncertaintyFactor)
+                    minimumSpeedUncertainty,
+                    location.horizontalAccuracy * speedUncertaintyFactor
+                )
                 let uncertainSpeed = Swift.max(
                     0,
                     Uncertain<Double>.normal(mean: baseSpeed, standardDeviation: speedUncertainty)
@@ -1392,7 +1397,8 @@ extension Uncertain where T == Bool {
 
                 // Model course uncertainty using the location's courseAccuracy
                 let uncertainCourse = Uncertain<Double>.normal(
-                    mean: baseCourse, standardDeviation: courseAccuracy
+                    mean: baseCourse,
+                    standardDeviation: courseAccuracy
                 ).sample()
 
                 // Normalize to 0-360 degrees
@@ -1429,7 +1435,8 @@ extension Uncertain where T == Bool {
 
                 // Model course uncertainty with the specified accuracy
                 let uncertainCourse = Uncertain<Double>.normal(
-                    mean: baseCourse, standardDeviation: courseAccuracy
+                    mean: baseCourse,
+                    standardDeviation: courseAccuracy
                 ).sample()
 
                 // Normalize to 0-360 degrees
