@@ -313,10 +313,12 @@ when events occur independently at a constant rate.
 #### [Bernoulli Distribution][bernoulli-distribution]
 
 ```swift
-let bernoulli = Uncertain<Bool>.bernoulli(probability: 0.7)
+let bernoulli = Uncertain<Double>.bernoulli(probability: 0.7)  // Uncertain<Bool>
 ```
 
 Models a single trial with two possible outcomes (success/failure).
+The constructor is declared on `Uncertain<Double>`
+and returns an `Uncertain<Bool>`.
 
 #### [Categorical Distribution][categorical-distribution]
 
@@ -371,6 +373,40 @@ let custom = Uncertain<Double> {
 ```
 
 The provided closure is called each time a sample is needed.
+
+#### Reproducible Sampling
+
+By default, the built-in distributions draw from the system's random number generator,
+so each run gives different samples.
+For tests and simulations that must give the same results on every run,
+pass a seeded generator to a constructor's `using:` parameter:
+
+```swift
+let generator = SplitMix64(seed: 42)
+
+let temperature = Uncertain<Double>.normal(mean: 23.5, standardDeviation: 1.2, using: generator)
+let humidity = Uncertain<Double>.uniform(min: 40.0, max: 50.0, using: generator)
+
+let comfortable = (temperature < 25.0) && (humidity < 48.0)
+comfortable.probability(exceeds: 0.5)  // The same decision on every run
+```
+
+`SplitMix64` is a seedable generator that this library provides.
+It is a class, so distributions made from one instance draw from one shared stream.
+It is not cryptographically secure.
+
+Any type that conforms to `RandomNumberGenerator` and `Sendable` also works.
+A distribution keeps its own copy of a value-type generator,
+so two distributions made from the same value give the same samples.
+To make independent distributions from value-type generators,
+give each one a different seed.
+
+Samples are reproducible when you draw them in the same order on every run.
+Concurrent sampling is safe, but the order of the draws can change between runs.
+`SplitMix64` gives the same sequence on every platform,
+but the samples that a distribution makes from it can differ
+between platforms and Swift versions,
+because they depend on floating-point math functions such as `log` and `cos`.
 
 ### Statistical Operations
 
