@@ -866,6 +866,79 @@ struct UncertainTests {
 
         #expect(notAndProb == notOrProb)
     }
+
+    // MARK: - Shared Samples in Comparisons
+
+    /// Checks that every sample of the evidence has the expected value.
+    func expectAlways(
+        _ expected: Bool,
+        _ evidence: Uncertain<Bool>,
+        sampleCount: Int = 1000,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) {
+        let samples = Array(evidence.prefix(sampleCount))
+        #expect(samples.allSatisfy { $0 == expected }, sourceLocation: sourceLocation)
+    }
+
+    @Test("Comparisons of a variable with itself use one sample")
+    func testComparisonsWithSelfShareSamples() {
+        // A fixed seed draws the same samples on every run
+        let rng = SplitMix64(seed: 1)
+        let x = Uncertain<Double>.normal(mean: 0.0, standardDeviation: 1.0, using: rng)
+
+        expectAlways(true, x == x)
+        expectAlways(false, x != x)
+        expectAlways(false, x < x)
+        expectAlways(false, x > x)
+    }
+
+    @Test("Comparisons of mixed expressions share samples")
+    func testComparisonsOfMixedExpressionsShareSamples() {
+        // A fixed seed draws the same samples on every run
+        let rng = SplitMix64(seed: 1)
+        let x = Uncertain<Double>.normal(mean: 0.0, standardDeviation: 1.0, using: rng)
+        let y = Uncertain<Double>.uniform(min: 1.0, max: 2.0, using: rng)
+
+        expectAlways(true, (x + y) > x)
+        expectAlways(true, x < (x + y))
+        expectAlways(false, (x + y) == x)
+        expectAlways(true, (x - y) != x)
+        expectAlways(false, (x > y) && (y > x))
+    }
+
+    @Test("Logical operators share samples across comparisons with constants")
+    func testLogicalOperatorsShareSamplesWithConstants() {
+        // A fixed seed draws the same samples on every run
+        let rng = SplitMix64(seed: 1)
+        let x = Uncertain<Double>.normal(mean: 0.0, standardDeviation: 1.0, using: rng)
+        let above = x > 0.0
+
+        expectAlways(false, above && (x <= 0.0))
+        expectAlways(true, above || (x <= 0.0))
+        expectAlways(false, (x >= 0.0) && (x < 0.0))
+        expectAlways(true, above == !(x <= 0.0))
+        expectAlways(false, above && !above)
+        expectAlways(true, above || !above)
+
+        // A discrete variable takes each value often, so equality is not rare
+        let coin = Uncertain<Int>.binomial(trials: 1, probability: 0.5, using: rng)
+        expectAlways(false, (coin == 1) && (coin != 1))
+        expectAlways(true, (coin == 0) || (coin != 0))
+        expectAlways(true, coin == coin)
+    }
+
+    @Test("Separate variables stay independent")
+    func testSeparateVariablesStayIndependent() {
+        // A fixed seed draws the same samples on every run
+        let rng = SplitMix64(seed: 1)
+        let x = Uncertain<Double>.normal(mean: 0.0, standardDeviation: 1.0, using: rng)
+        let y = Uncertain<Double>.normal(mean: 0.0, standardDeviation: 1.0, using: rng)
+
+        // For independent x and y, P(x < y) is 0.5
+        let samples = Array((x < y).prefix(1000))
+        let fraction = Double(samples.filter { $0 }.count) / Double(samples.count)
+        #expect(abs(fraction - 0.5) < 0.1)
+    }
 }
 
 #if canImport(CoreLocation)

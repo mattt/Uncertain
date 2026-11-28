@@ -51,13 +51,21 @@ public struct Uncertain<T>: Sendable where T: Sendable {
         self.node = .leaf(id: UUID(), sample: sample)
     }
 
-    /// Internal initializer with computation node for building computation graphs
-    init(sample: @escaping @Sendable () -> T, node: ComputationNode<T>) {
-        self.sample = {
-            var context = SampleContext()
-            return node.evaluate(in: &context)
-        }
+    /// Creates an uncertain value from a computation graph node.
+    ///
+    /// Each call to `sample` evaluates the node in a new context,
+    /// so each variable in the graph is sampled once per evaluation.
+    init(node: ComputationNode<T>) {
+        self.sample = { node.evaluate() }
         self.node = node
+    }
+
+    /// Creates an uncertain value that evaluates other nodes in the caller's context.
+    ///
+    /// Use this initializer for operations whose operands and result have different types,
+    /// such as comparisons, so that a variable on both sides is sampled once per evaluation.
+    init(evaluate: @escaping @Sendable (inout SampleContext) -> T) {
+        self.init(node: .derived(evaluate: evaluate))
     }
 
     /// Transforms an uncertain value by applying a function to each sample.
@@ -112,43 +120,43 @@ extension Uncertain where T: Equatable {
     /// Returns uncertain boolean evidence that this value equals a given value
     /// This follows the paper's approach: comparisons return evidence, not boolean facts
     public static func == (lhs: Uncertain<T>, rhs: T) -> Uncertain<Bool> {
-        let equalityNode = EqualityNode<T>.comparison(
-            left: lhs.node,
-            threshold: rhs,
-            comparison: { $0 == $1 }
-        )
-
-        return Uncertain<Bool>(
-            sample: { equalityNode.evaluate() },
-            node: ComputationNode<Bool>.leaf(id: UUID(), sample: { equalityNode.evaluate() })
-        )
+        let node = lhs.node
+        return Uncertain<Bool> { context in
+            node.evaluate(in: &context) == rhs
+        }
     }
 
     /// Returns uncertain boolean evidence that this value does not equal a given value
     public static func != (lhs: Uncertain<T>, rhs: T) -> Uncertain<Bool> {
-        let equalityNode = EqualityNode<T>.comparison(
-            left: lhs.node,
-            threshold: rhs,
-            comparison: { $0 != $1 }
-        )
-
-        return Uncertain<Bool>(
-            sample: { equalityNode.evaluate() },
-            node: ComputationNode<Bool>.leaf(id: UUID(), sample: { equalityNode.evaluate() })
-        )
-    }
-
-    /// Compares two uncertain values for equality
-    public static func == (lhs: Uncertain<T>, rhs: Uncertain<T>) -> Uncertain<Bool> {
-        return Uncertain<Bool> {
-            lhs.sample() == rhs.sample()
+        let node = lhs.node
+        return Uncertain<Bool> { context in
+            node.evaluate(in: &context) != rhs
         }
     }
 
-    /// Compares two uncertain values for inequality
+    /// Returns uncertain boolean evidence that two uncertain values are equal.
+    ///
+    /// Both operands are evaluated with one set of samples,
+    /// so a variable that appears on both sides is sampled once per evaluation.
+    /// For example, `x == x` is always `true`.
+    public static func == (lhs: Uncertain<T>, rhs: Uncertain<T>) -> Uncertain<Bool> {
+        let left = lhs.node
+        let right = rhs.node
+        return Uncertain<Bool> { context in
+            left.evaluate(in: &context) == right.evaluate(in: &context)
+        }
+    }
+
+    /// Returns uncertain boolean evidence that two uncertain values are not equal.
+    ///
+    /// Both operands are evaluated with one set of samples,
+    /// so a variable that appears on both sides is sampled once per evaluation.
+    /// For example, `x != x` is always `false`.
     public static func != (lhs: Uncertain<T>, rhs: Uncertain<T>) -> Uncertain<Bool> {
-        return Uncertain<Bool> {
-            lhs.sample() != rhs.sample()
+        let left = lhs.node
+        let right = rhs.node
+        return Uncertain<Bool> { context in
+            left.evaluate(in: &context) != right.evaluate(in: &context)
         }
     }
 }
@@ -157,71 +165,59 @@ extension Uncertain where T: Comparable {
     /// Returns uncertain boolean evidence that this value is greater than threshold
     /// This is the key insight from the paper: comparisons return evidence, not boolean facts
     public static func > (lhs: Uncertain<T>, rhs: T) -> Uncertain<Bool> {
-        let comparisonNode = ComparisonNode<T>.comparison(
-            left: lhs.node,
-            threshold: rhs,
-            comparison: { $0 > $1 }
-        )
-
-        return Uncertain<Bool>(
-            sample: { comparisonNode.evaluate() },
-            node: ComputationNode<Bool>.leaf(id: UUID(), sample: { comparisonNode.evaluate() })
-        )
+        let node = lhs.node
+        return Uncertain<Bool> { context in
+            node.evaluate(in: &context) > rhs
+        }
     }
 
     /// Returns uncertain boolean evidence that this value is less than threshold
     public static func < (lhs: Uncertain<T>, rhs: T) -> Uncertain<Bool> {
-        let comparisonNode = ComparisonNode<T>.comparison(
-            left: lhs.node,
-            threshold: rhs,
-            comparison: { $0 < $1 }
-        )
-
-        return Uncertain<Bool>(
-            sample: { comparisonNode.evaluate() },
-            node: ComputationNode<Bool>.leaf(id: UUID(), sample: { comparisonNode.evaluate() })
-        )
+        let node = lhs.node
+        return Uncertain<Bool> { context in
+            node.evaluate(in: &context) < rhs
+        }
     }
 
     /// Returns uncertain boolean evidence that this value is greater than or equal to threshold
     public static func >= (lhs: Uncertain<T>, rhs: T) -> Uncertain<Bool> {
-        let comparisonNode = ComparisonNode<T>.comparison(
-            left: lhs.node,
-            threshold: rhs,
-            comparison: { $0 >= $1 }
-        )
-
-        return Uncertain<Bool>(
-            sample: { comparisonNode.evaluate() },
-            node: ComputationNode<Bool>.leaf(id: UUID(), sample: { comparisonNode.evaluate() })
-        )
+        let node = lhs.node
+        return Uncertain<Bool> { context in
+            node.evaluate(in: &context) >= rhs
+        }
     }
 
     /// Returns uncertain boolean evidence that this value is less than or equal to threshold
     public static func <= (lhs: Uncertain<T>, rhs: T) -> Uncertain<Bool> {
-        let comparisonNode = ComparisonNode<T>.comparison(
-            left: lhs.node,
-            threshold: rhs,
-            comparison: { $0 <= $1 }
-        )
-
-        return Uncertain<Bool>(
-            sample: { comparisonNode.evaluate() },
-            node: ComputationNode<Bool>.leaf(id: UUID(), sample: { comparisonNode.evaluate() })
-        )
-    }
-
-    /// Compares two uncertain values
-    public static func > (lhs: Uncertain<T>, rhs: Uncertain<T>) -> Uncertain<Bool> {
-        return Uncertain<Bool> {
-            lhs.sample() > rhs.sample()
+        let node = lhs.node
+        return Uncertain<Bool> { context in
+            node.evaluate(in: &context) <= rhs
         }
     }
 
-    /// Compares two uncertain values
+    /// Returns uncertain boolean evidence that one uncertain value is greater than another.
+    ///
+    /// Both operands are evaluated with one set of samples,
+    /// so a variable that appears on both sides is sampled once per evaluation.
+    /// For example, `(x + 1) > x` is always `true`.
+    public static func > (lhs: Uncertain<T>, rhs: Uncertain<T>) -> Uncertain<Bool> {
+        let left = lhs.node
+        let right = rhs.node
+        return Uncertain<Bool> { context in
+            left.evaluate(in: &context) > right.evaluate(in: &context)
+        }
+    }
+
+    /// Returns uncertain boolean evidence that one uncertain value is less than another.
+    ///
+    /// Both operands are evaluated with one set of samples,
+    /// so a variable that appears on both sides is sampled once per evaluation.
+    /// For example, `x < x` is always `false`.
     public static func < (lhs: Uncertain<T>, rhs: Uncertain<T>) -> Uncertain<Bool> {
-        return Uncertain<Bool> {
-            lhs.sample() < rhs.sample()
+        let left = lhs.node
+        let right = rhs.node
+        return Uncertain<Bool> { context in
+            left.evaluate(in: &context) < right.evaluate(in: &context)
         }
     }
 }
@@ -235,10 +231,7 @@ extension Uncertain where T: Numeric {
             operation: { $0 + $1 }
         )
 
-        return Uncertain<T>(
-            sample: { newNode.evaluate() },
-            node: newNode
-        )
+        return Uncertain<T>(node: newNode)
     }
 
     /// Subtracts two uncertain values - builds computation graph
@@ -249,10 +242,7 @@ extension Uncertain where T: Numeric {
             operation: { $0 - $1 }
         )
 
-        return Uncertain<T>(
-            sample: { newNode.evaluate() },
-            node: newNode
-        )
+        return Uncertain<T>(node: newNode)
     }
 
     /// Multiplies two uncertain values - builds computation graph
@@ -263,10 +253,7 @@ extension Uncertain where T: Numeric {
             operation: { $0 * $1 }
         )
 
-        return Uncertain<T>(
-            sample: { newNode.evaluate() },
-            node: newNode
-        )
+        return Uncertain<T>(node: newNode)
     }
 
     /// Adds a constant to an uncertain value
@@ -337,10 +324,7 @@ extension Uncertain where T: BinaryFloatingPoint {
             operation: { $0 / $1 }
         )
 
-        return Uncertain<T>(
-            sample: { newNode.evaluate() },
-            node: newNode
-        )
+        return Uncertain<T>(node: newNode)
     }
 
     /// Divides an uncertain value by a constant
@@ -364,26 +348,37 @@ extension Uncertain where T == Bool {
     }
 
     /// Logical NOT operator for uncertain boolean values
+    ///
+    /// The result shares samples with its operand,
+    /// so `a && !a` is always `false`.
     public static prefix func ! (operand: Uncertain<Bool>) -> Uncertain<Bool> {
-        return Uncertain<Bool> {
-            var context = SampleContext()
-            return !operand.node.evaluate(in: &context)
+        let node = operand.node
+        return Uncertain<Bool> { context in
+            !node.evaluate(in: &context)
         }
     }
 
     /// Logical AND operator for uncertain boolean values
+    ///
+    /// The operands are evaluated with one set of samples,
+    /// so `(x > 0) && (x <= 0)` is always `false`.
     public static func && (lhs: Uncertain<Bool>, rhs: Uncertain<Bool>) -> Uncertain<Bool> {
-        return Uncertain<Bool> {
-            var context = SampleContext()
-            return lhs.node.evaluate(in: &context) && rhs.node.evaluate(in: &context)
+        let left = lhs.node
+        let right = rhs.node
+        return Uncertain<Bool> { context in
+            left.evaluate(in: &context) && right.evaluate(in: &context)
         }
     }
 
     /// Logical OR operator for uncertain boolean values
+    ///
+    /// The operands are evaluated with one set of samples,
+    /// so `(x > 0) || (x <= 0)` is always `true`.
     public static func || (lhs: Uncertain<Bool>, rhs: Uncertain<Bool>) -> Uncertain<Bool> {
-        return Uncertain<Bool> {
-            var context = SampleContext()
-            return lhs.node.evaluate(in: &context) || rhs.node.evaluate(in: &context)
+        let left = lhs.node
+        let right = rhs.node
+        return Uncertain<Bool> { context in
+            left.evaluate(in: &context) || right.evaluate(in: &context)
         }
     }
 }
@@ -1954,6 +1949,10 @@ internal indirect enum ComputationNode<T>: Sendable where T: Sendable {
         operation: @Sendable (T, T) -> T
     )
 
+    /// Node that computes its value from other nodes in the same context,
+    /// such as a comparison of two uncertain values
+    case derived(evaluate: @Sendable (inout SampleContext) -> T)
+
     /// Evaluates the computation graph node with memoization context
     func evaluate(in context: inout SampleContext) -> T {
         switch self {
@@ -1966,59 +1965,13 @@ internal indirect enum ComputationNode<T>: Sendable where T: Sendable {
             return value
         case .binaryOp(let left, let right, let operation):
             return operation(left.evaluate(in: &context), right.evaluate(in: &context))
+        case .derived(let evaluate):
+            return evaluate(&context)
         }
     }
 
     /// Evaluates the computation graph node in a new context
     func evaluate() -> T {
-        var context = SampleContext()
-        return evaluate(in: &context)
-    }
-}
-
-/// Specialized computation node for comparisons that return Bool
-internal indirect enum ComparisonNode<T>: Sendable where T: Sendable & Comparable {
-    /// Comparison operation node returning uncertain boolean evidence
-    case comparison(
-        left: ComputationNode<T>,
-        threshold: T,
-        comparison: @Sendable (T, T) -> Bool
-    )
-
-    /// Evaluates the comparison node with memoization context
-    func evaluate(in context: inout SampleContext) -> Bool {
-        switch self {
-        case .comparison(let left, let threshold, let comparison):
-            return comparison(left.evaluate(in: &context), threshold)
-        }
-    }
-
-    /// Evaluates the comparison node in a new context
-    func evaluate() -> Bool {
-        var context = SampleContext()
-        return evaluate(in: &context)
-    }
-}
-
-/// Specialized computation node for equality comparisons that return Bool
-internal indirect enum EqualityNode<T>: Sendable where T: Sendable & Equatable {
-    /// Equality operation node returning uncertain boolean evidence
-    case comparison(
-        left: ComputationNode<T>,
-        threshold: T,
-        comparison: @Sendable (T, T) -> Bool
-    )
-
-    /// Evaluates the equality node with memoization context
-    func evaluate(in context: inout SampleContext) -> Bool {
-        switch self {
-        case .comparison(let left, let threshold, let comparison):
-            return comparison(left.evaluate(in: &context), threshold)
-        }
-    }
-
-    /// Evaluates the equality node in a new context
-    func evaluate() -> Bool {
         var context = SampleContext()
         return evaluate(in: &context)
     }

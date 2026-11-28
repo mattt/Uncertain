@@ -169,6 +169,20 @@ let evidence = result > 15.0 // Uncertain<Bool>
 let confident = evidence.probability(exceeds: 0.8)  // Bool
 ```
 
+Each evaluation of an expression samples each variable in it once,
+so a variable that appears more than once in an expression
+has the same value everywhere in it.
+This applies to arithmetic, comparison, and logical operators:
+
+```swift
+let zero = x - x  // Always 0.0
+let same = x == x  // Always true
+let larger = (x + y) > x  // True whenever y is positive
+let impossible = (x > 10.0) && (x <= 10.0)  // Always false
+```
+
+Separate variables, such as `x` and `y`, are sampled independently.
+
 #### Arithmetic Operations
 
 All standard arithmetic operations are supported and build computation graphs:
